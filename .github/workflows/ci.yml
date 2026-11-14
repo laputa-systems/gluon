@@ -16,7 +16,7 @@ defaults:
 jobs:
   ci:
     name: CI
-    runs-on: macos-latest
+    runs-on: xcode-27
     permissions:
       contents: read
     defaults:
