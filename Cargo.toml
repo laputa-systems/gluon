@@ -2,9 +2,6 @@
 resolver = "2"
 members = ["crates/graph", "crates/state", "crates/engine", "crates/meson", "crates/ninja", "bins/build", "bins/meson", "bins/ninja"]
 
-[workspace.package]
-edition = "2024"
-
 [profile.release]
 opt-level = 3
 lto = "thin"
