@@ -59,4 +59,4 @@ reverses.
   release workflows build (`.github/workflows/ci.yml`,
   `.github/workflows/release.yml`). Releases are workflow-dispatch only,
   tagged `release-<commit-sha>` with `--prerelease --verify-tag`, and ship
-  `gluon-<target>.zip` archives plus `SHA256SUMS`.
+  `gluon-<target>.tar.xz` archives plus `SHA256SUMS`.
