@@ -15,7 +15,7 @@ defaults:
 
 env:
   CARGO_INCREMENTAL: 0
-  MUSL_IMAGE: ghcr.io/joshuarli/musl-toolchain@sha256:a9802a6f0658ad344fd6b2577891194019ab86de1a4d494e32c9bbec820e863e
+  MUSL_IMAGE: ghcr.io/joshuarli/musl-toolchain@sha256:8a372c6a873b7613987fecc1102f68fb16f4fc4e607432adad924dc1506eae54
 
 jobs:
   preflight:
