@@ -1,7 +1,7 @@
 # TODO
 
 Prefix: GLU
-Next: 28
+Next: 29
 
 ### GLU-19 · P3 · shared libraries have no symbol-extractor edge
 - **Area:** meson
@@ -56,5 +56,13 @@ Next: 28
 - **Where:** `crates/meson/src/compilers.rs` (`find_library`)
 - **Problem:** with `dirs:` Meson tries each naming pattern in the given directories and then in the compiler's system library directories, and link-checks each candidate (except static-only requests). gluon only checks whether the file exists in `dirs` and returns the first match, so a library present only in a system directory is reported missing, and a file that does not link is accepted.
 - **Recommendation:** Mirror `_find_library_real`: search `extra_dirs` followed by `get_library_dirs()` and probe candidates by linking a shared library.
+- **Fix with:** reference-parity
+- **Effort:** M
+
+### GLU-28 · P2 · differential harness cannot gate macOS builds
+- **Area:** tests
+- **Where:** `tests/differential/run.sh`; `tests/differential/fixtures/meson/shlib-static-deps`
+- **Problem:** On macOS the differential harness fails every fixture, so it has stopped being a gate. (1) Symbol comparison assumes GNU `nm` output: Mach-O `nm` prints per-file headers and paths that leak into the awk extraction, so every executable/shared-library fixture reports a symbol mismatch. (2) Nothing distinguishes the oxidized meson that lands on `PATH` (e.g. `~/.local/bin/meson` resolving to a gluon build) from the genuine upstream reference, so such hosts compare gluon against itself. (3) The `expected-fail` ledger is empty and CI runs only `cargo test`, so the harness has been red-or-useless on macOS since at least the 7fb279a port and the shared-library link defect shipped unnoticed (play hit it cold after a deps-cache miss).
+- **Recommendation:** Teach the harness Mach-O symbol extraction (or gate symbol comparison to ELF), detect and warn when the reference `meson` reports oxidized output, and pin the reference toolchain (Homebrew or a dedicated venv) when running on macOS. Wire the harness into macOS CI, or stop calling it a gate. The `shlib-static-deps` fixture (#14) is the regression case to keep.
 - **Fix with:** reference-parity
 - **Effort:** M
