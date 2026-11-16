@@ -35,8 +35,8 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
     let mut out = Args::default();
     for a in args {
         match a.as_str() {
-            "-g" => out.generator = true,
-            "-r" => out.by_rule = true,
+            cli_short_g!() => out.generator = true,
+            cli_short_r!() => out.by_rule = true,
             s if s.starts_with('-') => return Err(format!("clean: unknown flag {s}")),
             s => out.targets.push(s.to_string()),
         }
@@ -169,5 +169,15 @@ fn collect_subtree(state: &State, target: &str, edge_set: &mut HashSet<usize>) {
         .chain(&edge.order_only_inputs)
     {
         collect_subtree(state, inp, edge_set);
+    }
+}
+
+#[cfg(test)]
+mod help_example_test {
+    #[test]
+    fn example_reaches_tool_parser() {
+        let args = crate::help::example_args("clean");
+        let parsed = super::parse_args(&args).unwrap();
+        assert_eq!(parsed.targets, ["app"]);
     }
 }
