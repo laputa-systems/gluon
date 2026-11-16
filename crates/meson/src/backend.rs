@@ -23,6 +23,7 @@ pub struct Toolchain {
     pub c: Vec<String>,
     pub cpp: Vec<String>,
     pub archiver: Vec<String>,
+    pub archiver_args: String,
 }
 
 impl Default for Toolchain {
@@ -31,6 +32,7 @@ impl Default for Toolchain {
             c: vec!["cc".to_string()],
             cpp: vec!["c++".to_string()],
             archiver: vec!["ar".to_string()],
+            archiver_args: "csr".to_string(),
         }
     }
 }
@@ -273,9 +275,10 @@ impl NinjaBackend {
         writeln!(out, "rule STATIC_LINKER").unwrap();
         writeln!(
             out,
-            "  command = {} --internal static-link $out -- {} csrD $out $in",
+            "  command = {} --internal static-link $out -- {} {} $out $in",
             quote_argument(&self.meson_command),
-            shell_escape_command(&self.toolchain.archiver)
+            shell_escape_command(&self.toolchain.archiver),
+            self.toolchain.archiver_args
         )
         .unwrap();
         writeln!(out, "  description = Linking static target $out").unwrap();

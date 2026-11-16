@@ -1616,7 +1616,26 @@ fn toolchain(vm: &crate::vm::VM) -> crate::backend::Toolchain {
     {
         toolchain.archiver = archiver;
     }
+    toolchain.archiver_args = archiver_args(&toolchain.archiver);
     toolchain
+}
+
+/// Meson's `ArLinker`: deterministic archives (`D`) only when `ar -h` lists `[D]`; Apple's `ar`
+/// has no `D` and rejects it.
+fn archiver_args(archiver: &[String]) -> String {
+    let Some((program, args)) = archiver.split_first() else {
+        return "csr".to_string();
+    };
+    let help = Command::new(program)
+        .args(args)
+        .arg("-h")
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output();
+    match help {
+        Ok(output) if String::from_utf8_lossy(&output.stdout).contains("[D]") => "csrD".to_string(),
+        _ => "csr".to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -1647,6 +1666,24 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn archiver_args_add_d_only_when_the_archiver_lists_it() {
+        let dir = temp_build("archiver");
+        let script = |name: &str, body: &str| {
+            let path = dir.join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+            std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+            std::fs::set_permissions(&path, permissions).unwrap();
+            vec![path.to_string_lossy().into_owned()]
+        };
+        let gnu = script("gnu-ar", "echo ' commands: d m p q r s t x'; echo ' modifiers: [D] - use zero for timestamps'");
+        let apple = script("apple-ar", "echo 'usage:  ar -d [-TLsv] archive file ...' >&2; exit 1");
+        assert_eq!(archiver_args(&gnu), "csrD");
+        assert_eq!(archiver_args(&apple), "csr");
+        assert_eq!(archiver_args(&[dir.join("missing").to_string_lossy().into_owned()]), "csr");
     }
 
     #[test]
