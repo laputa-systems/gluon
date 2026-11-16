@@ -31,7 +31,7 @@ enum CliCommand {
     Devenv(DevenvArgs),
     Env2mfile,
     Format(FormatArgs),
-    Help,
+    Help(Option<String>),
     Version,
     Internal(Vec<String>),
     Error(i32, String),
@@ -123,6 +123,9 @@ struct FormatArgs {
 }
 
 impl Cli {
+    #[cfg(test)]
+    pub(crate) fn is_error(&self) -> bool { matches!(self.command, CliCommand::Error(..)) }
+
     pub fn parse_args() -> Self {
         Self::parse_args_from(std::env::args().collect())
     }
@@ -131,13 +134,21 @@ impl Cli {
 
         if args.len() < 2 {
             return Cli {
-                command: CliCommand::Help,
+                command: CliCommand::Help(None),
             };
         }
 
         let cmd = &args[1];
         let rest = &args[2..];
 
+        if rest.iter().take_while(|arg| arg.as_str() != "--").any(|arg| arg == "-h" || arg == "--help") {
+            let nested = matches!(cmd.as_str(), "wrap" | "subprojects" | "--internal");
+            let canonical = match cmd.as_str() { "build" => "compile", "fmt" => "format", other => other };
+            let selection = if nested && rest.first().is_some_and(|s| !s.starts_with('-')) {
+                format!("{} {}", canonical, rest[0])
+            } else { canonical.to_string() };
+            return Cli { command: CliCommand::Help(Some(selection)) };
+        }
         let command = match cmd.as_str() {
             "setup" | "configure" if cmd == "setup" => Self::parse_setup(rest),
             "configure" => Self::parse_configure(rest),
@@ -155,14 +166,14 @@ impl Cli {
             "format" | "fmt" => Self::parse_format(rest),
             "--version" | "version" => CliCommand::Version,
             "--internal" => CliCommand::Internal(rest.to_vec()),
-            "help" | "--help" | "-h" => CliCommand::Help,
+            "help" | "--help" | "-h" => CliCommand::Help(None),
             // If first arg is a directory, treat as setup
             _ if Path::new(cmd).is_dir() || !cmd.starts_with('-') => {
                 let mut all_args = vec![cmd.clone()];
                 all_args.extend(rest.iter().cloned());
                 Self::parse_setup(&all_args)
             }
-            _ => CliCommand::Help,
+            _ => CliCommand::Help(None),
         };
 
         Cli { command }
@@ -646,8 +657,8 @@ impl Cli {
                 0
             }
             CliCommand::Internal(args) => crate::internal::run(args),
-            CliCommand::Help => {
-                self.print_help();
+            CliCommand::Help(selection) => {
+                print!("{}", crate::help::reference("meson", selection.as_deref(), selection.is_none()));
                 0
             }
             CliCommand::Error(code, message) => {
@@ -1420,26 +1431,6 @@ impl Cli {
         0
     }
 
-    fn print_help(&self) {
-        println!("usage: meson <command> [options]");
-        println!();
-        println!("Commands:");
-        println!("  setup       Configure the project");
-        println!("  configure   Change project options");
-        println!("  compile     Build the project");
-        println!("  test        Run tests");
-        println!("  install     Install the project");
-        println!("  introspect  Introspect project");
-        println!("  init        Create a new project");
-        println!("  dist        Generate release archive");
-        println!("  wrap        Manage wrap dependencies");
-        println!("  subprojects Manage subprojects");
-        println!("  devenv      Run commands in dev environment");
-        println!("  format      Format meson.build files");
-        println!("  rewrite     Modify project definition");
-        println!("  env2mfile   Convert env to machine file");
-        println!("  --version   Print version");
-    }
 }
 
 fn parse_builtin_cli_option(

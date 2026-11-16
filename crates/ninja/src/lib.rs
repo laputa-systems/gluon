@@ -3,6 +3,7 @@
 pub mod build;
 pub mod cli;
 pub mod graph;
+pub mod help;
 pub mod manifest;
 pub mod status;
 pub mod tools;
@@ -17,6 +18,12 @@ pub fn main_entry() -> ExitCode {
 /// Later words are flags and targets, so a wrapper that puts a subcommand
 /// in `argv[1]` must drop that word before calling this.
 pub fn main_from(raw: Vec<String>) -> ExitCode {
+    let tool_index = raw.iter().position(|s| s == "-t");
+    if raw.iter().skip(1).any(|s| s == "-h" || s == "--help") {
+        let tool = tool_index.and_then(|i| raw.get(i + 1)).filter(|s| *s != "-h" && *s != "--help");
+        print!("{}", help::reference("ninja", tool.map(String::as_str), tool.is_none()));
+        return ExitCode::SUCCESS;
+    }
     let opts = match cli::parse(&raw) {
         Ok(o) => o,
         Err(e) => {

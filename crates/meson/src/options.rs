@@ -4,7 +4,7 @@ use crate::objects::{FeatureState, Object};
 /// cross/native files, and version comparison.
 use std::collections::HashMap;
 
-const BUILTIN_OPTION_KEYS: &[&str] = &[
+pub(crate) const BUILTIN_OPTION_KEYS: &[&str] = &[
     "prefix",
     "bindir",
     "datadir",

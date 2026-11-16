@@ -45,3 +45,7 @@ The `dist` profile is the release profile used by CI and releases
 see its `NOTICE` and license texts). `crates/ninja` is Apache-2.0
 (Oxidized Ninja Apache-2.0; Ninja Apache-2.0 — see its `NOTICE`).
 Muon was used as a behavioral specification only; no GPL code is included.
+
+The built `meson`, `ninja`, and `gluon-build` commands provide offline
+references with `--help` (or `-h`), including command and tool examples.
+Use `meson COMMAND --help` or `ninja -t TOOL --help` for a focused page.
