@@ -124,7 +124,25 @@ struct FormatArgs {
 
 impl Cli {
     #[cfg(test)]
-    pub(crate) fn is_error(&self) -> bool { matches!(self.command, CliCommand::Error(..)) }
+    pub(crate) fn example_matches(&self, path: &str) -> bool {
+        match (&self.command, path) {
+            (CliCommand::Setup(a), "setup") => a.build_dir == "builddir",
+            (CliCommand::Configure(a), "configure") => a.build_dir == "builddir" && a.options == [("debug".into(), "true".into())],
+            (CliCommand::Compile(a), "compile") => a.build_dir == "builddir",
+            (CliCommand::Test(a), "test") => a.build_dir == "builddir",
+            (CliCommand::Install(a), "install") => a.build_dir == "builddir" && a.destdir.as_deref() == Some("staging"),
+            (CliCommand::Introspect(a), "introspect") => a.build_dir == "builddir" && a.what == ["targets"],
+            (CliCommand::Init(a), "init") => a.name.as_deref() == Some("hello"),
+            (CliCommand::Dist(a), "dist") => a.build_dir == "builddir",
+            (CliCommand::Wrap(a), p) => p == "wrap" && a.subcommand == "list" || p.strip_prefix("wrap ") == Some(a.subcommand.as_str()) && (!matches!(a.subcommand.as_str(), "install" | "info" | "search") || a.name.as_deref() == Some("zlib")),
+            (CliCommand::Subprojects(a), p) => p == "subprojects" && a.subcommand == "list" || p.strip_prefix("subprojects ") == Some(a.subcommand.as_str()),
+            (CliCommand::Rewrite, "rewrite") | (CliCommand::Env2mfile, "env2mfile") => true,
+            (CliCommand::Devenv(a), "devenv") => a.build_dir == "builddir" && a.command == ["echo", "hello"],
+            (CliCommand::Format(a), "format") => a.files == ["meson.build"],
+            (CliCommand::Internal(a), p) => p.strip_prefix("--internal ") == a.first().map(String::as_str) && a.len() > 2,
+            _ => false,
+        }
+    }
 
     pub fn parse_args() -> Self {
         Self::parse_args_from(std::env::args().collect())
@@ -141,14 +159,6 @@ impl Cli {
         let cmd = &args[1];
         let rest = &args[2..];
 
-        if rest.iter().take_while(|arg| arg.as_str() != "--").any(|arg| arg == "-h" || arg == "--help") {
-            let nested = matches!(cmd.as_str(), "wrap" | "subprojects" | "--internal");
-            let canonical = match cmd.as_str() { "build" => "compile", "fmt" => "format", other => other };
-            let selection = if nested && rest.first().is_some_and(|s| !s.starts_with('-')) {
-                format!("{} {}", canonical, rest[0])
-            } else { canonical.to_string() };
-            return Cli { command: CliCommand::Help(Some(selection)) };
-        }
         let command = match cmd.as_str() {
             "setup" | "configure" if cmd == "setup" => Self::parse_setup(rest),
             "configure" => Self::parse_configure(rest),
@@ -158,14 +168,16 @@ impl Cli {
             "introspect" => Self::parse_introspect(rest),
             "init" => Self::parse_init(rest),
             "dist" => Self::parse_dist(rest),
-            "wrap" => Self::parse_wrap(rest),
-            "subprojects" => Self::parse_subprojects(rest),
+            "wrap" => Self::parse_nested_help(rest, "wrap").unwrap_or_else(|| Self::parse_wrap(rest)),
+            "subprojects" => Self::parse_nested_help(rest, "subprojects").unwrap_or_else(|| Self::parse_subprojects(rest)),
+            "rewrite" if rest.first().is_some_and(|s| s == "-h" || s == "--help") => CliCommand::Help(Some("rewrite".into())),
             "rewrite" => CliCommand::Rewrite,
             "devenv" => Self::parse_devenv(rest),
+            "env2mfile" if rest.first().is_some_and(|s| s == "-h" || s == "--help") => CliCommand::Help(Some("env2mfile".into())),
             "env2mfile" => CliCommand::Env2mfile,
             "format" | "fmt" => Self::parse_format(rest),
             "--version" | "version" => CliCommand::Version,
-            "--internal" => CliCommand::Internal(rest.to_vec()),
+            "--internal" => Self::parse_internal_help(rest).unwrap_or_else(|| CliCommand::Internal(rest.to_vec())),
             "help" | "--help" | "-h" => CliCommand::Help(None),
             // If first arg is a directory, treat as setup
             _ if Path::new(cmd).is_dir() || !cmd.starts_with('-') => {
@@ -190,6 +202,7 @@ impl Cli {
 
         while i < args.len() {
             let arg = &args[i];
+            if arg == "-h" || arg == "--help" { return CliCommand::Help(Some("setup".into())); }
             if arg.starts_with("-D") {
                 let opt = &arg[2..];
                 if let Some(eq) = opt.find('=') {
@@ -265,6 +278,7 @@ impl Cli {
 
         while i < args.len() {
             let arg = &args[i];
+            if arg == "-h" || arg == "--help" { return CliCommand::Help(Some("configure".into())); }
             if arg.starts_with("-D") {
                 let opt = &arg[2..];
                 if let Some(eq) = opt.find('=') {
@@ -297,6 +311,7 @@ impl Cli {
 
         while i < args.len() {
             let arg = &args[i];
+            if arg == "-h" || arg == "--help" { return CliCommand::Help(Some("compile".into())); }
             match arg.as_str() {
                 "-j" | "--jobs" => {
                     i += 1;
@@ -349,6 +364,7 @@ impl Cli {
 
         while i < args.len() {
             let arg = &args[i];
+            if arg == "-h" || arg == "--help" { return CliCommand::Help(Some("test".into())); }
             match arg.as_str() {
                 "-v" | "--verbose" => verbose = true,
                 "--no-rebuild" => no_rebuild = true,
@@ -411,6 +427,7 @@ impl Cli {
 
         while i < args.len() {
             let arg = &args[i];
+            if arg == "-h" || arg == "--help" { return CliCommand::Help(Some("install".into())); }
             match arg.as_str() {
                 "--destdir" => {
                     i += 1;
@@ -462,6 +479,7 @@ impl Cli {
 
         while i < args.len() {
             let arg = &args[i];
+            if arg == "-h" || arg == "--help" { return CliCommand::Help(Some("introspect".into())); }
             match arg.as_str() {
                 "--all" | "-a" => all = true,
                 "--targets" => what.push("targets".to_string()),
@@ -493,6 +511,7 @@ impl Cli {
 
         while i < args.len() {
             let arg = &args[i];
+            if arg == "-h" || arg == "--help" { return CliCommand::Help(Some("init".into())); }
             match arg.as_str() {
                 "-n" | "--name" => {
                     i += 1;
@@ -551,6 +570,7 @@ impl Cli {
 
         while i < args.len() {
             let arg = &args[i];
+            if arg == "-h" || arg == "--help" { return CliCommand::Help(Some("dist".into())); }
             match arg.as_str() {
                 "--formats" => {
                     i += 1;
@@ -579,6 +599,26 @@ impl Cli {
         })
     }
 
+    fn parse_nested_help(args: &[String], parent: &str) -> Option<CliCommand> {
+        let position = args.iter().position(|s| s == "-h" || s == "--help")?;
+        let path = if position > 0 { format!("{} {}", parent, args[0]) } else { parent.to_owned() };
+        Some(CliCommand::Help(Some(path)))
+    }
+
+    fn parse_internal_help(args: &[String]) -> Option<CliCommand> {
+        let name = args.first()?;
+        if name == "-h" || name == "--help" { return Some(CliCommand::Help(Some("--internal".into()))); }
+        let mut i = 1;
+        while i < args.len() {
+            let arg = args[i].as_str();
+            if arg == "--" { break; }
+            if arg == "-h" || arg == "--help" { return Some(CliCommand::Help(Some(format!("--internal {name}")))); }
+            if name == "exe" && matches!(arg, "--capture" | "--feed" | "--env") { i += 1; }
+            i += 1;
+        }
+        None
+    }
+
     fn parse_wrap(args: &[String]) -> CliCommand {
         let subcommand = args.first().cloned().unwrap_or_else(|| "list".to_string());
         let name = args.get(1).cloned();
@@ -595,7 +635,12 @@ impl Cli {
         let mut command = Vec::new();
         let mut after_dash = false;
 
+        let mut directory_value = false;
         for arg in args {
+            if !after_dash && !directory_value && (arg == "-h" || arg == "--help") {
+                return CliCommand::Help(Some("devenv".into()));
+            }
+            directory_value = !after_dash && arg == "-C";
             if after_dash {
                 command.push(arg.clone());
             } else if arg == "--" {
@@ -616,6 +661,7 @@ impl Cli {
         let mut recursive = false;
 
         for arg in args {
+            if arg == "-h" || arg == "--help" { return CliCommand::Help(Some("format".into())); }
             match arg.as_str() {
                 "-i" | "--inplace" => inplace = true,
                 "-r" | "--recursive" => recursive = true,
@@ -1735,5 +1781,28 @@ mod tests {
         let code = test_cli(dir.to_str().unwrap(), true).run();
         assert_ne!(code, 0);
         std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+#[cfg(test)]
+mod help_value_tests {
+    use super::{Cli, CliCommand};
+
+    fn parse(args: &[&str]) -> CliCommand {
+        Cli::parse_args_from(args.iter().map(|s| s.to_string()).collect()).command
+    }
+
+    #[test]
+    fn help_tokens_consumed_as_values_remain_values() {
+        assert!(matches!(parse(&["meson", "setup", "--cross-file", "--help"]), CliCommand::Setup(a) if a.cross_file.as_deref() == Some("--help")));
+        assert!(matches!(parse(&["meson", "configure", "--prefix", "-h"]), CliCommand::Configure(a) if a.options == [("prefix".into(), "-h".into())]));
+        assert!(matches!(parse(&["meson", "compile", "-C", "--help"]), CliCommand::Compile(a) if a.build_dir == "--help"));
+        assert!(matches!(parse(&["meson", "test", "--suite", "-h"]), CliCommand::Test(a) if a.suite.as_deref() == Some("-h")));
+        assert!(matches!(parse(&["meson", "install", "--destdir", "--help"]), CliCommand::Install(a) if a.destdir.as_deref() == Some("--help")));
+        assert!(matches!(parse(&["meson", "init", "--name", "--help"]), CliCommand::Init(a) if a.name.as_deref() == Some("--help")));
+        assert!(matches!(parse(&["meson", "dist", "--formats", "-h"]), CliCommand::Dist(a) if a.formats == ["-h"]));
+        assert!(matches!(parse(&["meson", "devenv", "-C", "--help"]), CliCommand::Devenv(a) if a.build_dir == "--help"));
+        assert!(matches!(parse(&["meson", "--internal", "exe", "--capture", "--help", "--", "echo"]), CliCommand::Internal(a) if a[2] == "--help"));
+        assert!(matches!(parse(&["meson", "--internal", "exe", "--", "echo", "--help"]), CliCommand::Internal(_)));
     }
 }

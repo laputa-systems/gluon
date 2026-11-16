@@ -65,7 +65,7 @@ mod tests {
         for entry in ENTRIES {
             let argv = std::iter::once("meson".to_owned()).chain(entry.example.split_whitespace().map(str::to_owned)).collect();
             let cli = crate::Cli::parse_args_from(argv);
-            assert!(!cli.is_error(), "{}", entry.example);
+            assert!(cli.example_matches(entry.path), "{}", entry.example);
         }
         assert!(crate::internal::parse_exe(&["--".into(), "echo".into(), "hello".into()]).is_ok());
     }

@@ -15,6 +15,7 @@ pub struct Options {
     pub quiet: bool,
     pub verbose: bool,
     pub show_version: bool,
+    pub show_help: bool,
     pub dry_run: bool,
     pub debug: Vec<String>,
     pub tool: Option<String>,
@@ -31,6 +32,7 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
     while i < argv.len() {
         let a = &argv[i];
         match a.as_str() {
+            "-h" | "--help" => o.show_help = true,
             "--version" => o.show_version = true,
             "--quiet" => o.quiet = true,
             "-v" | "--verbose" => o.verbose = true,
@@ -82,7 +84,13 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
                 // Everything after -t <name> is forwarded to the tool.
                 i += 1;
                 while i < argv.len() {
-                    o.tool_args.push(argv[i].clone());
+                    let arg = &argv[i];
+                    if arg == "-h" || arg == "--help" { o.show_help = true; }
+                    o.tool_args.push(arg.clone());
+                    if o.tool.as_deref() == Some("multi-inputs") && arg == "-d" && i + 1 < argv.len() {
+                        i += 1;
+                        o.tool_args.push(argv[i].clone());
+                    }
                     i += 1;
                 }
                 return Ok(o);
@@ -149,5 +157,27 @@ impl Options {
     /// True if the user passed `-d explain`.
     pub fn explain(&self) -> bool {
         self.debug.iter().any(|d| d == "explain")
+    }
+}
+
+#[cfg(test)]
+mod help_tests {
+    use super::parse;
+
+    fn words(args: &[&str]) -> Vec<String> { args.iter().map(|s| s.to_string()).collect() }
+
+    #[test]
+    fn help_tokens_consumed_as_values_remain_values() {
+        for flag in ["-C", "-f", "-d", "-t"] {
+            let parsed = parse(&words(&["ninja", flag, "--help"])).unwrap();
+            assert!(!parsed.show_help, "{flag}");
+        }
+        for flag in ["-j", "-k"] {
+            assert!(parse(&words(&["ninja", flag, "-h"])).is_err());
+        }
+        let parsed = parse(&words(&["ninja", "-t", "multi-inputs", "-d", "--help", "app"])).unwrap();
+        assert!(!parsed.show_help);
+        assert_eq!(parsed.tool_args, ["-d", "--help", "app"]);
+        assert!(parse(&words(&["ninja", "-t", "multi-inputs", "-h"])).unwrap().show_help);
     }
 }

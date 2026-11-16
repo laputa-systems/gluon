@@ -171,3 +171,13 @@ fn collect_subtree(state: &State, target: &str, edge_set: &mut HashSet<usize>) {
         collect_subtree(state, inp, edge_set);
     }
 }
+
+#[cfg(test)]
+mod help_example_test {
+    #[test]
+    fn example_reaches_tool_parser() {
+        let args = crate::help::example_args("clean");
+        let parsed = super::parse_args(&args).unwrap();
+        assert_eq!(parsed.targets, ["app"]);
+    }
+}

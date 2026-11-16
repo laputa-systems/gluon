@@ -42,5 +42,11 @@ with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as directory:
     for tool in ninja_tools:
         for flag in ('-h', '--help'):
             assert 'Examples:\n' in run('ninja', '-t', tool, flag)
+            assert 'Examples:\n' in run('gluon-build', 'ninja', '-t', tool, flag)
+    for command in meson_commands:
+        assert 'Examples:\n' in run('gluon-build', 'meson', *command.split(), '--help')
+    for flag in ('-C', '-f'):
+        result = subprocess.run([str(bindir / 'ninja'), flag, '--help'], cwd=directory, env={'PATH': '', 'HOME': directory}, capture_output=True, text=True)
+        assert result.returncode != 0 and 'Examples:\n' not in result.stdout, (flag, result.stdout, result.stderr)
     assert not os.listdir(directory), os.listdir(directory)
 print('offline help checks passed')

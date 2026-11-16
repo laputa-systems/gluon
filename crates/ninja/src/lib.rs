@@ -18,12 +18,6 @@ pub fn main_entry() -> ExitCode {
 /// Later words are flags and targets, so a wrapper that puts a subcommand
 /// in `argv[1]` must drop that word before calling this.
 pub fn main_from(raw: Vec<String>) -> ExitCode {
-    let tool_index = raw.iter().position(|s| s == "-t");
-    if raw.iter().skip(1).any(|s| s == "-h" || s == "--help") {
-        let tool = tool_index.and_then(|i| raw.get(i + 1)).filter(|s| *s != "-h" && *s != "--help");
-        print!("{}", help::reference("ninja", tool.map(String::as_str), tool.is_none()));
-        return ExitCode::SUCCESS;
-    }
     let opts = match cli::parse(&raw) {
         Ok(o) => o,
         Err(e) => {
@@ -31,6 +25,11 @@ pub fn main_from(raw: Vec<String>) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+
+    if opts.show_help {
+        print!("{}", help::reference("ninja", opts.tool.as_deref(), opts.tool.is_none()));
+        return ExitCode::SUCCESS;
+    }
 
     if opts.show_version {
         println!("1.13.2");

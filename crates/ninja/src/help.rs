@@ -25,6 +25,11 @@ pub fn reference(program: &str, selection: Option<&str>, footer: bool) -> String
 }
 
 #[cfg(test)]
+pub(crate) fn example_args(name: &str) -> Vec<String> {
+    TOOLS.iter().find(|tool| tool.name == name).unwrap().example.split_whitespace().skip(1).map(str::to_owned).collect()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     #[test]
@@ -33,6 +38,7 @@ mod tests {
             let argv = std::iter::once("ninja".to_owned()).chain(std::iter::once("-t".to_owned())).chain(tool.example.split_whitespace().map(str::to_owned)).collect::<Vec<_>>();
             let parsed = crate::cli::parse(&argv).unwrap();
             assert_eq!(parsed.tool.as_deref(), Some(tool.name));
+            assert_eq!(parsed.tool_args, example_args(tool.name));
         }
     }
 }
