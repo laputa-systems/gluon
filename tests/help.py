@@ -27,6 +27,7 @@ with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as directory:
         top = run(exe, '--help')
         assert top == run(exe, '-h')
         assert top.endswith(footer) and top.count(footer) == 1
+        assert top.count('\n  -h, --help ') == 1, (exe, top)
         assert 'Examples:\n' in top
         for command in meson_commands if exe in ('meson', 'gluon-build') else []:
             prefix = 'gluon-build meson' if exe == 'gluon-build' else 'meson'

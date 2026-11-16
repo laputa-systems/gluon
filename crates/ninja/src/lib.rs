@@ -1,5 +1,7 @@
 //! ninja entry point. CLI dispatch only — all real work lives in submodules.
 
+#[macro_use]
+mod cli_names;
 pub mod build;
 pub mod cli;
 pub mod graph;
@@ -27,7 +29,7 @@ pub fn main_from(raw: Vec<String>) -> ExitCode {
     };
 
     if opts.show_help {
-        print!("{}", help::reference("ninja", opts.tool.as_deref(), opts.tool.is_none()));
+        print!("{}", help::reference("ninja", opts.tool.as_deref().map_or(help::Page::Primary, help::Page::Command)));
         return ExitCode::SUCCESS;
     }
 

@@ -45,8 +45,8 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
     while i < args.len() {
         let s = args[i].as_str();
         match s {
-            "--print0" => a.print0 = true,
-            "-d" => {
+            cli_long_print0!() => a.print0 = true,
+            cli_short_d!() => {
                 i += 1;
                 a.delim = Some(
                     args.get(i)
@@ -54,7 +54,7 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
                         .ok_or_else(|| "-d needs an argument".to_string())?,
                 );
             }
-            s2 if s2.starts_with("-d") => a.delim = Some(s2[2..].to_string()),
+            s2 if s2.starts_with(cli_short_d!()) => a.delim = Some(s2[2..].to_string()),
             s2 if s2.starts_with('-') => return Err(format!("multi-inputs: unknown flag {s2}")),
             _ => a.targets.push(args[i].clone()),
         }

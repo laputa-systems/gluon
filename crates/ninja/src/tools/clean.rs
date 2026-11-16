@@ -35,8 +35,8 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
     let mut out = Args::default();
     for a in args {
         match a.as_str() {
-            "-g" => out.generator = true,
-            "-r" => out.by_rule = true,
+            cli_short_g!() => out.generator = true,
+            cli_short_r!() => out.by_rule = true,
             s if s.starts_with('-') => return Err(format!("clean: unknown flag {s}")),
             s => out.targets.push(s.to_string()),
         }

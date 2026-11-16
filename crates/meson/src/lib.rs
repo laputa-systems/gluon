@@ -44,6 +44,8 @@
 
 pub const VERSION: &str = "1.12.1";
 
+#[macro_use]
+mod cli_names;
 pub mod ast;
 pub mod backend;
 pub mod builtins;
