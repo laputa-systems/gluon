@@ -10,6 +10,7 @@ DIFF_DIR="$ROOT/tests/differential"
 FIX_DIR="$DIFF_DIR/fixtures"
 LEDGER="$DIFF_DIR/expected-fail"
 TMPBASE="$ROOT/.work/tmp/diff"
+. "$DIFF_DIR/symbols.sh"
 GLUON_MESON="$ROOT/target/release/meson"
 GLUON_NINJA="$ROOT/target/release/ninja"
 
@@ -23,6 +24,7 @@ if ! python3 "$DIFF_DIR/normalize.py" --selftest >/dev/null 2>&1; then
   echo "error: normalize selftest failed" >&2
   exit 1
 fi
+bash "$DIFF_DIR/test-symbols.sh" || exit 1
 
 # verify pins (P-3)
 ref_meson=$(meson --version 2>&1 | head -1)
@@ -93,12 +95,13 @@ run_compare_meson() {
   cand_build="$cand_work/builddir"
   mkdir -p "$ref_build" "$cand_build"
   setup_args=()
-  if [ -f "$src/setup-args.txt" ]; then
+  for setup_file in "$src/setup-args.txt" "$src/setup-args-$(uname -s).txt"; do
+    [ -f "$setup_file" ] || continue
     while IFS= read -r line; do
       [ -z "$line" ] && continue
       setup_args+=("$line")
-    done <"$src/setup-args.txt"
-  fi
+    done <"$setup_file"
+  done
   setup_env=()
   if [ -f "$src/setup-env.txt" ]; then
     while IFS= read -r line; do
@@ -193,12 +196,12 @@ run_compare_meson() {
     cand_path=$(cd "$cand_build" && find . -type f -name "$bn" | head -1)
     nm_flags=
     case $(file "$ref_build/$ref_path" 2>/dev/null) in
-      *Mach-O*) nm_flags=-a ;;
+      *Mach-O*) nm_flags=-gU ;;
       *ELF*|*'current ar archive'*) nm_flags='-g --defined-only' ;;
     esac
     if [ -n "$nm_flags" ]; then
-      nm $nm_flags "$ref_build/$ref_path" 2>/dev/null | awk '{print $NF}' | LC_ALL=C sort >"$work/nm_ref.txt" || true
-      nm $nm_flags "$cand_build/$cand_path" 2>/dev/null | awk '{print $NF}' | LC_ALL=C sort >"$work/nm_cand.txt" || true
+      defined_symbols "$ref_build/$ref_path" >"$work/nm_ref.txt" || true
+      defined_symbols "$cand_build/$cand_path" >"$work/nm_cand.txt" || true
       if ! diff -q "$work/nm_ref.txt" "$work/nm_cand.txt" >/dev/null 2>&1; then
         printf 'FAIL %s symbols mismatch for %s\n' "$id" "$bn" >>"$TMPBASE/results.log"
         diff "$work/nm_ref.txt" "$work/nm_cand.txt" >>"$TMPBASE/results.log" || true
