@@ -68,6 +68,30 @@ fn clean_edge_does_not_hold_the_only_jobserver_token() {
 }
 
 #[test]
+fn recorded_header_changes_rebuild_the_output() {
+    let dir = scratch("depfile-header");
+    fs::write(
+        dir.join("build.ninja"),
+        "rule copy\n  command = cp -p header out && printf 'out: header\\n' > out.d\n  depfile = out.d\n  deps = gcc\nbuild out: copy\n",
+    )
+    .unwrap();
+    write_source(&dir.join("header"), "first", 1_700_000_000);
+    build(&dir, &[]);
+    assert_eq!(fs::read_to_string(dir.join("out")).unwrap(), "first");
+    let idle = run(&dir, &[]);
+    assert!(idle.status.success(), "{idle:?}");
+    assert_eq!(idle.stdout, b"ninja: no work to do.\n");
+
+    write_source(&dir.join("header"), "second", 1_700_000_001);
+    build(&dir, &[]);
+    assert_eq!(fs::read_to_string(dir.join("out")).unwrap(), "second");
+    let idle = run(&dir, &[]);
+    assert!(idle.status.success(), "{idle:?}");
+    assert_eq!(idle.stdout, b"ninja: no work to do.\n");
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn ordinary_inputs_rebuild_and_restat_stays_idle_after_observing_them() {
     let dir = scratch("incremental");
     fs::write(
