@@ -928,6 +928,8 @@ impl NinjaBackend {
     }
 
     fn write_install_target(&self, out: &mut String, _build_data: &BuildData) -> Result<(), String> {
+        writeln!(out, "build PHONY: phony").unwrap();
+        writeln!(out).unwrap();
         writeln!(out, "build install: phony meson-internal__install").unwrap();
         writeln!(out).unwrap();
         writeln!(out, "build meson-internal__install: CUSTOM_COMMAND PHONY | all").unwrap();
