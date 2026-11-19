@@ -998,15 +998,22 @@ fn mark_depfile_dirty(
     let Some(rule) = state.rules.get(&edge.rule) else {
         return;
     };
+    let uses_deps_cache = matches!(
+        lookup_either(edge, rule, "deps").as_deref(),
+        Some("gcc") | Some("msvc")
+    );
+    if uses_deps_cache {
+        for out in edge.outputs.iter().chain(&edge.implicit_outputs) {
+            if !deps_log.records.contains_key(out) {
+                dirty.insert(out.clone(), true);
+            }
+        }
+    }
     let Some(path) = edge_binding(state, edge, rule, "depfile").filter(|path| !path.is_empty()) else {
         return;
     };
     let text = std::fs::read_to_string(path).ok();
     let parsed = text.as_deref().map(depfile::parse);
-    let uses_deps_cache = matches!(
-        lookup_either(edge, rule, "deps").as_deref(),
-        Some("gcc") | Some("msvc")
-    );
     for out in edge.outputs.iter().chain(&edge.implicit_outputs) {
         let deps = parsed
             .as_ref()

@@ -398,14 +398,6 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 
 
 
-### DSLP-13 · P2 · missing Ninja dependency records let stale outputs survive
-
-- **Area:** Ninja dependency state
-- **Where:** crates/ninja/src/build/runner.rs:1012, crates/state/src/deps_log.rs:76
-- **Problem:** Build a program that returns a header value with cc -MMD -MF app.d, depfile = app.d and deps = gcc. After a warm no-op, remove .ninja_deps and change the header from zero to seven. Gluon reports no work and the executable still returns zero. Ninja 1.13.2 recompiles and the executable returns seven.
-- **Recommendation:** Invalidate missing or rejected required dependency records. Verify persistence failures before deleting the depfile.
-- **Fix with:** durable-state
-- **Effort:** M
 
 
 ### DSLP-14 · P2 · Meson configure_file accepts missing inputs and failed commands

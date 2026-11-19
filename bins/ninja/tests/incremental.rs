@@ -127,6 +127,40 @@ fn recorded_header_changes_rebuild_the_output() {
 }
 
 #[test]
+fn missing_dependency_record_rebuilds_the_output() {
+    for missing in ["absent", "truncated", "other-output"] {
+        let dir = scratch("missing-dependency-record");
+        fs::write(
+            dir.join("build.ninja"),
+            "rule compile\n  command = cc -MMD -MF app.d app.c -o app\n  depfile = app.d\n  deps = gcc\nrule other\n  command = touch other; printf 'other: app.c\\n' > other.d\n  depfile = other.d\n  deps = gcc\nbuild other: other\nbuild app: compile app.c\ndefault app\n",
+        )
+        .unwrap();
+        fs::write(dir.join("app.c"), "#include \"value.h\"\nint main(void) { return VALUE; }\n").unwrap();
+        fs::write(dir.join("value.h"), "#define VALUE 0\n").unwrap();
+        build(&dir, &["other"]);
+        let other_log = fs::read(dir.join(".ninja_deps")).unwrap();
+        build(&dir, &[]);
+        assert_eq!(Command::new(dir.join("app")).status().unwrap().code(), Some(0));
+        let idle = run(&dir, &[]);
+        assert!(idle.status.success(), "{idle:?}");
+        assert_eq!(idle.stdout, b"ninja: no work to do.\n");
+        let complete_log = fs::read(dir.join(".ninja_deps")).unwrap();
+        match missing {
+            "absent" => fs::remove_file(dir.join(".ninja_deps")).unwrap(),
+            "truncated" => fs::write(dir.join(".ninja_deps"), &complete_log[..complete_log.len() - 1]).unwrap(),
+            "other-output" => fs::write(dir.join(".ninja_deps"), &other_log).unwrap(),
+            _ => unreachable!(),
+        }
+        fs::write(dir.join("value.h"), "#define VALUE 7\n").unwrap();
+        let rebuilt = run(&dir, &[]);
+        assert!(rebuilt.status.success(), "{rebuilt:?}");
+        assert_ne!(rebuilt.stdout, b"ninja: no work to do.\n");
+        assert_eq!(Command::new(dir.join("app")).status().unwrap().code(), Some(7));
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[test]
 fn ordinary_inputs_rebuild_and_restat_stays_idle_after_observing_them() {
     let dir = scratch("incremental");
     fs::write(
