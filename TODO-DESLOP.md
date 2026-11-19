@@ -1,5 +1,5 @@
 Prefix: DSLP
-Next: 6
+Next: 7
 
 Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/main/docs/campaigns/deslop.md), tier B). One agent works this file with the `deslop` skill: take the lowest-numbered open ticket whose area does not start with `Needs owner ·`. After DSLP-5, work the open P1 and P2 findings, then fill in `## Report` below.
 
@@ -96,6 +96,15 @@ hosted workflow pins Python 3.14.10 and rejects any other skipped fixture.
 ## Tickets
 
 
+### DSLP-6 · P1 · Ninja can build successfully without a declared input
+
+- **Area:** Ninja planning
+- **Where:** crates/ninja/src/build/plan.rs, crates/ninja/src/build/runner.rs, tests/differential/fixtures/ninja/missing-dep
+- **Problem:** In a scratch build.ninja, define rule touch with an indented command = touch $out and add build out: touch missing.in. Leave missing.in absent. Pinned Ninja 1.13.2 exits 1 in normal and dry runs. Gluon exits 0 in both and creates out in the real build. The existing compiler fixture masks the gap because cc catches the missing input.
+- **Recommendation:** Reject missing manifest inputs before dispatch and preserve generated inputs and stale depfiles. Test a clean graph where deps.dd adds extra as an implicit output of a, a second edge declares extra as its implicit input, and a and the second output are both defaults. Both engines build that graph, so checking unresolved leaves before dyndep loads would regress it.
+- **Fix with:** reference-parity
+- **Effort:** M
+
 ### DSLP-2 · P2 · Diagnose: ultrareview into this backlog
 
 - **Area:** deslop · diagnose
@@ -122,6 +131,7 @@ hosted workflow pins Python 3.14.10 and rejects any other skipped fixture.
 - **Recommendation:** Run the deslop Tests step. Accept: no undispositioned survivor in critical code, the test cost budget holds, and the lane is green where the tools are mirrored.
 - **Fix with:** deslop
 - **Effort:** M
+
 
 ### DSLP-5 · P2 · Dead code: tools and debloat
 
