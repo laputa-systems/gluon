@@ -1,5 +1,5 @@
 Prefix: DSLP
-Next: 10
+Next: 11
 
 Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/main/docs/campaigns/deslop.md), tier B). One agent works this file with the `deslop` skill: take the lowest-numbered open ticket whose area does not start with `Needs owner ·`. After DSLP-5, work the open P1 and P2 findings, then fill in `## Report` below.
 
@@ -148,18 +148,24 @@ were 137.0 ms and 139.0 ms with ranges of 131.6–143.3 ms and
 131.8 ms. The differences fall within the observed spread. The
 broader performance corpus remains open.
 
+Generated dyndep files enter planning only when their producers and
+prerequisites are ready. The CLI controls preserve the old metadata
+bytes on rejection when a generator command changes, when a transitive
+input becomes newer and when a nested metadata entry declares the
+dirty prerequisite. The checks exercise normal and dry runs. An
+up-to-date generator with no build log is usable, and the same
+generator flag protects its file from ordinary cleaning. The graph
+JSON control confirmed that it reports the same flag.
+
+All five CLI controls passed against pinned Ninja and the candidate.
+The rebuilt ARM64 Linux binaries passed static ELF verification.
+Alpine passed all 58 fixtures, and macOS passed 56 with the two
+Wayland skips. Both fixture counts include three expected failures.
+
 ## Tickets
 
 
 
-### DSLP-7 · P1 · Ninja can build from stale generated dyndep metadata
-
-- **Area:** Ninja planning
-- **Where:** crates/ninja/src/build/runner.rs, crates/ninja/src/build/dyndep.rs
-- **Problem:** Build deps.dd from first.dd with cp. The metadata declares extra as an implicit output of a, and out consumes extra. Bind both edges to deps.dd and default a and out. Prime only deps.dd, then change the command to copy new.dd, which no longer declares extra. Pinned Ninja 1.13.2 exits 1 before dispatch. Gluon release-fa8b6aa and the declared-input fix regenerate deps.dd byte for byte from new.dd but still use the old producer and create out with exit zero. Changing a source file can also leave the old graph in effect.
-- **Recommendation:** Check the producing edge before loading generated dyndep metadata and use ready output from the current generation. Verify both command and input changes in normal and dry builds, including a metadata input whose own producer needs work.
-- **Fix with:** reference-parity
-- **Effort:** L
 
 
 
@@ -201,5 +207,15 @@ broader performance corpus remains open.
 - **Problem:** No dead-code scan has run.
 - **Recommendation:** Run the deslop Dead code step. Accept: tools clean or allowlisted with reasons; walk-backs filed as Needs owner tickets.
 - **Fix with:** deslop
+- **Effort:** M
+
+
+### DSLP-10 · P2 · Ninja dry runs report clean edges as commands
+
+- **Area:** Ninja CLI parity
+- **Where:** crates/ninja/src/build/runner.rs, bins/ninja/tests/incremental.rs
+- **Problem:** Build an ordinary copy rule once and then run the same target with -n. Pinned Ninja 1.13.2 reports no work. Gluon prints a placeholder command for the up-to-date edge. The dry-run branch bypasses command and input freshness and prints every real edge in the plan.
+- **Recommendation:** Use the real readiness decisions when simulating a dry run. Check clean, dirty, generated, quiet and response-file paths without executing commands or writing logs or response files.
+- **Fix with:** reference-parity
 - **Effort:** M
 
