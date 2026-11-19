@@ -654,20 +654,18 @@ fn schedule(
                 } else {
                     Vec::new()
                 };
-                let mtimes_before: Vec<Option<SystemTime>> = if restat {
-                    edge.outputs
-                        .iter()
-                        .chain(&edge.implicit_outputs)
-                        .map(|o| mtime_of(o))
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                let outputs_owned: Vec<String> = edge
+                let outputs = edge
                     .outputs
                     .iter()
                     .chain(&edge.implicit_outputs)
-                    .cloned()
+                    .map(|path| OutputBeforeRun {
+                        path: path.clone(),
+                        mtime: if restat {
+                            BeforeMtime::Observed(mtime_of(path))
+                        } else {
+                            BeforeMtime::Unobserved
+                        },
+                    })
                     .collect();
                 if is_console_now {
                     status.build_started_console(&prepared.shown);
@@ -675,11 +673,20 @@ fn schedule(
                     status.build_started(&prepared.shown);
                 }
                 let tx = tx.clone();
-                let prepared_outputs = outputs_owned.clone();
-                let prepared_mtimes = mtimes_before.clone();
-                let restat_flag = restat;
-                let explain_owned = explain_lines.clone();
                 let cmd_hash = command_hashes[slot];
+                let send_outcome = move |run_command: fn(&Prepared) -> OutcomeKind| {
+                    let command_started = SystemTime::now();
+                    let kind = run_command(&prepared);
+                    let outcome = EdgeOutcome {
+                        slot,
+                        shown: prepared.shown,
+                        kind,
+                        explain: explain_lines,
+                        outputs,
+                        command_hash: cmd_hash,
+                    };
+                    let _ = tx.send((outcome, command_started));
+                };
                 if is_console_now {
                     // Console-pool edges run synchronously on the main
                     // thread with inherited stdio so the child can
@@ -691,25 +698,9 @@ fn schedule(
                     // reap path handles bookkeeping (dirtiness,
                     // .ninja_log, deps_log, pool/jobserver release).
                     status.lock_console();
-                    let command_started = SystemTime::now();
-                    let mut outcome = execute_console(slot, prepared);
-                    outcome.explain = explain_owned;
-                    outcome.restat = restat_flag;
-                    outcome.outputs_for_restat = prepared_outputs;
-                    outcome.mtimes_before = prepared_mtimes;
-                    outcome.command_hash = cmd_hash;
-                    let _ = tx.send((outcome, command_started));
+                    send_outcome(execute_console);
                 } else {
-                    thread::spawn(move || {
-                        let command_started = SystemTime::now();
-                        let mut outcome = execute(slot, prepared);
-                        outcome.explain = explain_owned;
-                        outcome.restat = restat_flag;
-                        outcome.outputs_for_restat = prepared_outputs;
-                        outcome.mtimes_before = prepared_mtimes;
-                        outcome.command_hash = cmd_hash;
-                        let _ = tx.send((outcome, command_started));
-                    });
+                    thread::spawn(move || send_outcome(execute));
                 }
             }
         }
@@ -772,26 +763,12 @@ fn schedule(
             }
             complete_slot(slot, &dependents, &mut done, &mut remaining);
             // Update dirty status for the outputs based on restat.
-            if outcome.restat {
-                let after: Vec<Option<SystemTime>> = outcome
-                    .outputs_for_restat
-                    .iter()
-                    .map(|o| mtime_of(o))
-                    .collect();
-                let unchanged = !outcome.outputs_for_restat.is_empty()
-                    && after.len() == outcome.mtimes_before.len()
-                    && after
-                        .iter()
-                        .zip(outcome.mtimes_before.iter())
-                        .all(|(a, b)| a == b && a.is_some());
-                let new_dirty = !unchanged;
-                for o in &outcome.outputs_for_restat {
-                    dirty.insert(o.clone(), new_dirty);
-                }
-            } else {
-                for o in &outcome.outputs_for_restat {
-                    dirty.insert(o.clone(), true);
-                }
+            let outputs_dirty = outcome.outputs.iter().any(|output| match output.mtime {
+                BeforeMtime::Observed(Some(before)) => mtime_of(&output.path) != Some(before),
+                BeforeMtime::Observed(None) | BeforeMtime::Unobserved => true,
+            });
+            for output in &outcome.outputs {
+                dirty.insert(output.path.clone(), outputs_dirty);
             }
             // Print any captured explain lines just before the
             // corresponding `[N/T]` status line. Doing it here keeps the
@@ -811,17 +788,14 @@ fn schedule(
                     }
                     let started_ns = log::mtime_to_ns(Some(command_started));
                     let finished_ns = log::mtime_to_ns(Some(SystemTime::now()));
-                    for (index, out) in outcome.outputs_for_restat.iter().enumerate() {
+                    for output in &outcome.outputs {
+                        let out = &output.path;
                         let observed = mtime_of(out);
                         let observed_ns = log::mtime_to_ns(observed);
-                        let recorded_ns = if outcome.restat {
-                            if outcome.mtimes_before.get(index) == Some(&observed) {
-                                started_ns
-                            } else {
-                                started_ns.max(observed_ns)
-                            }
-                        } else {
-                            observed_ns
+                        let recorded_ns = match output.mtime {
+                            BeforeMtime::Observed(before) if before == observed => started_ns,
+                            BeforeMtime::Observed(_) => started_ns.max(observed_ns),
+                            BeforeMtime::Unobserved => observed_ns,
                         };
                         let entry = log::LogEntry {
                             start_ms: (started_ns / 1_000_000) as u64,
@@ -1193,14 +1167,22 @@ fn prepare(state: &State, edge: &Edge, opts: &Options) -> Result<Prepared, Strin
     })
 }
 
+enum BeforeMtime {
+    Unobserved,
+    Observed(Option<SystemTime>),
+}
+
+struct OutputBeforeRun {
+    path: String,
+    mtime: BeforeMtime,
+}
+
 struct EdgeOutcome {
     slot: usize,
     shown: String,
     kind: OutcomeKind,
     explain: Vec<String>,
-    restat: bool,
-    outputs_for_restat: Vec<String>,
-    mtimes_before: Vec<Option<SystemTime>>,
+    outputs: Vec<OutputBeforeRun>,
     /// Hash of the command we ran for this edge. Carried into the
     /// completion handler so it can be appended to `.ninja_log`.
     command_hash: u64,
@@ -1216,20 +1198,11 @@ enum OutcomeKind {
 /// Worker-side: write the rspfile, spawn the command, capture output,
 /// remove the rspfile. Decides whether the exit code maps to Ok, Failed,
 /// or Interrupted (SIGINT).
-fn execute(slot: usize, p: Prepared) -> EdgeOutcome {
+fn execute(p: &Prepared) -> OutcomeKind {
     if let Some((path, content)) = &p.rspfile {
         ensure_parent_dir(path);
         if let Err(e) = std::fs::write(path, content) {
-            return EdgeOutcome {
-                slot,
-                shown: p.shown,
-                kind: OutcomeKind::SpawnError(format!("rspfile '{path}': {e}")),
-                explain: Vec::new(),
-                restat: false,
-                outputs_for_restat: Vec::new(),
-                mtimes_before: Vec::new(),
-                command_hash: 0,
-            };
+            return OutcomeKind::SpawnError(format!("rspfile '{path}': {e}"));
         }
     }
 
@@ -1241,48 +1214,19 @@ fn execute(slot: usize, p: Prepared) -> EdgeOutcome {
 
     let output = match result {
         Ok(o) => o,
-        Err(e) => {
-            return EdgeOutcome {
-                slot,
-                shown: p.shown,
-                kind: OutcomeKind::SpawnError(format!("failed to spawn: {e}")),
-                explain: Vec::new(),
-                restat: false,
-                outputs_for_restat: Vec::new(),
-                mtimes_before: Vec::new(),
-                command_hash: 0,
-            };
-        }
+        Err(e) => return OutcomeKind::SpawnError(format!("failed to spawn: {e}")),
     };
 
     let mut combined = output.stdout;
     combined.extend_from_slice(&output.stderr);
 
     if output.status.success() {
-        return EdgeOutcome {
-            slot,
-            shown: p.shown,
-            kind: OutcomeKind::Ok { combined },
-            explain: Vec::new(),
-            restat: false,
-            outputs_for_restat: Vec::new(),
-            mtimes_before: Vec::new(),
-            command_hash: 0,
-        };
+        return OutcomeKind::Ok { combined };
     }
 
     let raw = output.status.code().unwrap_or(-1);
     if raw == 130 {
-        return EdgeOutcome {
-            slot,
-            shown: p.shown,
-            kind: OutcomeKind::Interrupted,
-            explain: Vec::new(),
-            restat: false,
-            outputs_for_restat: Vec::new(),
-            mtimes_before: Vec::new(),
-            command_hash: 0,
-        };
+        return OutcomeKind::Interrupted;
     }
     let code: u8 = if !(0..=255).contains(&raw) {
         1
@@ -1294,41 +1238,20 @@ fn execute(slot: usize, p: Prepared) -> EdgeOutcome {
     let header = format!("FAILED: [code={raw}] {} \n{}\n", p.outputs, p.command);
     let mut buf = header.into_bytes();
     buf.extend_from_slice(&combined);
-    EdgeOutcome {
-        slot,
-        shown: p.shown,
-        kind: OutcomeKind::Failed {
-            code,
-            combined: buf,
-        },
-        explain: Vec::new(),
-        command_hash: 0,
-        restat: false,
-        outputs_for_restat: Vec::new(),
-        mtimes_before: Vec::new(),
-    }
+    OutcomeKind::Failed { code, combined: buf }
 }
 
 /// Console-pool variant of `execute`: spawns the subprocess with
 /// stdin/stdout/stderr inherited from ninja so the child owns the
-/// terminal. Returns an `EdgeOutcome` with empty `combined` on success
+/// terminal. Returns an `OutcomeKind` with empty `combined` on success
 /// (the child's output went straight to the terminal); failures still
 /// carry a synthetic `FAILED: [code=N] outputs\ncommand\n` header so
 /// the eventual reap path can replay it after the console unlocks.
-fn execute_console(slot: usize, p: Prepared) -> EdgeOutcome {
+fn execute_console(p: &Prepared) -> OutcomeKind {
     if let Some((path, content)) = &p.rspfile {
         ensure_parent_dir(path);
         if let Err(e) = std::fs::write(path, content) {
-            return EdgeOutcome {
-                slot,
-                shown: p.shown,
-                kind: OutcomeKind::SpawnError(format!("rspfile '{path}': {e}")),
-                explain: Vec::new(),
-                restat: false,
-                outputs_for_restat: Vec::new(),
-                mtimes_before: Vec::new(),
-                command_hash: 0,
-            };
+            return OutcomeKind::SpawnError(format!("rspfile '{path}': {e}"));
         }
     }
 
@@ -1340,47 +1263,18 @@ fn execute_console(slot: usize, p: Prepared) -> EdgeOutcome {
 
     let status = match result {
         Ok(s) => s,
-        Err(e) => {
-            return EdgeOutcome {
-                slot,
-                shown: p.shown,
-                kind: OutcomeKind::SpawnError(format!("failed to spawn: {e}")),
-                explain: Vec::new(),
-                restat: false,
-                outputs_for_restat: Vec::new(),
-                mtimes_before: Vec::new(),
-                command_hash: 0,
-            };
-        }
+        Err(e) => return OutcomeKind::SpawnError(format!("failed to spawn: {e}")),
     };
 
     if status.success() {
-        return EdgeOutcome {
-            slot,
-            shown: p.shown,
-            kind: OutcomeKind::Ok {
-                combined: Vec::new(),
-            },
-            explain: Vec::new(),
-            restat: false,
-            outputs_for_restat: Vec::new(),
-            mtimes_before: Vec::new(),
-            command_hash: 0,
+        return OutcomeKind::Ok {
+            combined: Vec::new(),
         };
     }
 
     let raw = status.code().unwrap_or(-1);
     if raw == 130 {
-        return EdgeOutcome {
-            slot,
-            shown: p.shown,
-            kind: OutcomeKind::Interrupted,
-            explain: Vec::new(),
-            restat: false,
-            outputs_for_restat: Vec::new(),
-            mtimes_before: Vec::new(),
-            command_hash: 0,
-        };
+        return OutcomeKind::Interrupted;
     }
     let code: u8 = if !(0..=255).contains(&raw) {
         1
@@ -1388,18 +1282,9 @@ fn execute_console(slot: usize, p: Prepared) -> EdgeOutcome {
         raw as u8
     };
     let header = format!("FAILED: [code={raw}] {} \n{}\n", p.outputs, p.command);
-    EdgeOutcome {
-        slot,
-        shown: p.shown,
-        kind: OutcomeKind::Failed {
-            code,
-            combined: header.into_bytes(),
-        },
-        explain: Vec::new(),
-        command_hash: 0,
-        restat: false,
-        outputs_for_restat: Vec::new(),
-        mtimes_before: Vec::new(),
+    OutcomeKind::Failed {
+        code,
+        combined: header.into_bytes(),
     }
 }
 
