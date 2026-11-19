@@ -236,6 +236,37 @@ seven. The review filed the failure as DSLP-11 and the runtime findings
 as DSLP-12 through DSLP-20. It did not qualify the full build and
 installation matrix or pursue owner-dependent work outside Gluon.
 
+The first Types change pairs each output with its restat observation.
+The old completion type accepted one output and zero timestamp entries.
+An isolated compiler witness accepted that shape at `c5e681d`.
+The new type rejects a bare output path with E0308. It distinguishes
+an output observed missing before the run from a path for which the
+scheduler did not take a timestamp. The dispatcher attaches this
+record once for both ordinary and console commands.
+
+Clippy and all eight dist-profile incremental tests passed on macOS.
+Five interleaved dist pairs used two outputs from one restat rule.
+Each tree began with two installed outputs and a warm no-op invocation.
+Touching the source without changing its bytes ran the generator alone.
+Replacing its bytes ran the generator and the two consumers. Both
+engines produced the same bytes and then stayed idle. Median wall times
+were 24.94 and 25.04 ms for the unchanged case and 26.91 and 26.61 ms
+for the changed case. The ranges overlapped in both cases. Both host
+readiness checks passed. The 100,000-edge warm graph kept its output
+bytes and build-log hash. One baseline observation was much slower than
+the rest, so that run establishes no speed difference. The stripped
+Ninja binaries had the same size.
+
+The candidate at `d2293f1` passed 56 differential fixtures on macOS
+with the two Wayland skips and all 58 on stable Alpine ARM64. On
+Alpine the reference was Ninja 1.13.2 built from its tagged source
+`3441b63` and the checksum-pinned Meson 1.12.1 wheel. The static dist
+binaries passed the Laputa install fixture. FFmpeg-build installed
+the locked dav1d archive and the decoder check returned 1.5.4.
+Play rebuilt SPIRV-Cross and libplacebo with the candidate Ninja,
+linked `player-app`, and loaded the resulting libplacebo library
+when started with `--version`.
+
 ## Tickets
 
 
