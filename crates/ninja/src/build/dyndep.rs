@@ -24,6 +24,12 @@ pub struct DyndepFile {
     pub entries: HashMap<String, DyndepEntry>,
 }
 
+impl DyndepFile {
+    pub(super) fn entry_for(&self, outputs: &[String]) -> Option<&DyndepEntry> {
+        outputs.iter().find_map(|output| self.entries.get(output))
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct DyndepEntry {
     pub implicit_outputs: Vec<String>,

@@ -17,11 +17,13 @@ use super::dyndep;
 use super::expand::{edge_binding, expand_in_edge, lookup_either};
 use super::jobserver::{self, Slot};
 use super::log;
-use super::plan::{build_plan, resolve_targets};
+use super::plan::{build_plan, build_plan_with_producers, resolve_targets};
 use crate::cli::Options;
 use crate::graph::{Edge, State};
 use crate::status::{Mode, Status};
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::io::ErrorKind;
 use std::sync::mpsc;
 use std::thread;
 use std::time::SystemTime;
@@ -78,7 +80,10 @@ pub fn run_targets(
         }
     }
 
-    let plan = build_plan(state, &targets)?;
+    let BuildPlan {
+        order: plan,
+        producers,
+    } = validate_plan(state, &targets)?;
     if plan.is_empty() {
         if !opts.quiet && announce_no_work {
             println!("ninja: no work to do.");
@@ -112,12 +117,97 @@ pub fn run_targets(
     }
     let mode = Mode::detect();
     let mut status = Status::new(mode, opts.quiet, opts.verbose, real_count);
-    let (result, ran) = schedule(state, opts, &plan, &mut status, announce_no_work)?;
+    let (result, ran) = schedule(
+        state,
+        opts,
+        &plan,
+        &producers,
+        &mut status,
+        announce_no_work,
+    )?;
     if result == 0 && real_count == 0 && !opts.quiet {
         // All edges in the plan turned out to be phony — preserve the
         // legacy "no work to do" message.
     }
     Ok(RunReport { code: result, ran })
+}
+
+struct BuildPlan<'a> {
+    order: Vec<usize>,
+    producers: Cow<'a, HashMap<String, usize>>,
+}
+
+fn validate_plan<'a>(state: &'a State, targets: &[String]) -> Result<BuildPlan<'a>, String> {
+    let mut plan = build_plan(state, targets)?;
+    let mut producers = Cow::Borrowed(&state.producers);
+    let mut existing_sources = HashSet::new();
+    let mut inspected_dyndeps = HashSet::new();
+    loop {
+        let consumed = plan.iter().flat_map(|&index| {
+            let edge = &state.edges[index];
+            edge.inputs
+                .iter()
+                .chain(&edge.implicit_inputs)
+                .chain(&edge.order_only_inputs)
+                .chain(&edge.dyndep)
+                .map(move |input| (input.as_str(), edge.outputs.first()))
+        });
+        let requested = targets.iter().map(|target| (target.as_str(), None));
+        let mut missing = None;
+        for (input, owner) in requested.chain(consumed) {
+            if producers.contains_key(input) || existing_sources.contains(input) {
+                continue;
+            }
+            match std::fs::metadata(input) {
+                Ok(_) => {
+                    existing_sources.insert(input);
+                }
+                Err(error)
+                    if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) =>
+                {
+                    missing = Some((input, owner));
+                    break;
+                }
+                Err(error) => return Err(format!("error: stat '{input}': {error}")),
+            }
+        }
+        let Some((input, owner)) = missing else {
+            return Ok(BuildPlan { order: plan, producers });
+        };
+
+        let previous_count = producers.len();
+        for path in plan
+            .iter()
+            .filter_map(|&index| state.edges[index].dyndep.as_deref())
+        {
+            if !inspected_dyndeps.insert(path) || !std::path::Path::new(path).is_file() {
+                continue;
+            }
+            let dyndep = read_dyndep(path)?;
+            let mut inspected_edges = HashSet::new();
+            for output in dyndep.entries.keys() {
+                let Some(&index) = state.producers.get(output) else {
+                    continue;
+                };
+                let edge = &state.edges[index];
+                if edge.dyndep.as_deref() == Some(path)
+                    && inspected_edges.insert(index)
+                    && let Some(entry) = dyndep.entry_for(&edge.outputs)
+                {
+                    for implicit in &entry.implicit_outputs {
+                        if producers.to_mut().insert(implicit.clone(), index).is_some() {
+                            return Err(format!("multiple rules generate {implicit}"));
+                        }
+                    }
+                }
+            }
+        }
+        if producers.len() == previous_count {
+            let context = owner.map_or_else(String::new, |out| format!(", needed by '{out}',"));
+            return Err(format!("error: '{input}'{context} missing and no known rule to make it"));
+        }
+        plan = build_plan_with_producers(state, targets, &producers)?;
+    }
 }
 
 /// Dependency-driven scheduler. Walks the topologically-ordered plan and
@@ -127,6 +217,7 @@ fn schedule(
     state: &State,
     opts: &Options,
     plan: &[usize],
+    planned_producers: &HashMap<String, usize>,
     status: &mut Status,
     announce_no_work: bool,
 ) -> Result<(u8, bool), String> {
@@ -179,7 +270,7 @@ fn schedule(
             .chain(&edge.order_only_inputs)
             .chain(dyndep_iter)
         {
-            if let Some(&prod) = state.producers.get(inp)
+            if let Some(&prod) = planned_producers.get(inp)
                 && in_plan.contains(&prod)
                 && let Some(&dep_slot) = idx_in_plan.get(&prod)
                 && seen_dep.insert(dep_slot)
@@ -261,28 +352,12 @@ fn schedule(
     }
 
     // Initial node dirtiness — kept deliberately minimal:
-    //   - source files (no in-edge) referenced as inputs: dirty iff the
-    //     file is missing on disk;
     //   - phony outputs whose edge has no inputs ('.FORCE'-style nodes)
     //     are always dirty;
     //   - everything else starts clean and the dispatch-time
     //      check (combined with each completed edge's
     //     dirty-output update) decides whether downstream work fires.
     let mut dirty: HashMap<String, bool> = HashMap::new();
-    for edge in &edges {
-        for inp in edge
-            .inputs
-            .iter()
-            .chain(&edge.implicit_inputs)
-            .chain(&edge.order_only_inputs)
-        {
-            if !producers.contains_key(inp) {
-                dirty
-                    .entry(inp.clone())
-                    .or_insert_with(|| !std::path::Path::new(inp).exists());
-            }
-        }
-    }
     for &edge_idx in plan.iter() {
         let edge = &edges[edge_idx];
         if edge.is_phony() && edge.inputs.is_empty() && edge.implicit_inputs.is_empty() {
@@ -876,23 +951,13 @@ fn merge_dyndep(
     cache: &mut HashMap<String, dyndep::DyndepFile>,
 ) -> Result<(), String> {
     if !cache.contains_key(path) {
-        let src =
-            std::fs::read_to_string(path).map_err(|e| format!("loading dyndep '{path}': {e}"))?;
-        let parsed = dyndep::parse(&src).map_err(|e| format!("dyndep '{path}': {e}"))?;
-        cache.insert(path.to_string(), parsed);
+        cache.insert(path.to_string(), read_dyndep(path)?);
     }
     let ddf = &cache[path];
-    // Find the entry keyed by any of the edge's explicit outputs.
     let edge = &mut edges[idx];
-    let key = edge
-        .outputs
-        .iter()
-        .find(|o| ddf.entries.contains_key(o.as_str()))
-        .cloned();
-    let Some(key) = key else {
+    let Some(entry) = ddf.entry_for(&edge.outputs) else {
         return Ok(());
     };
-    let entry = &ddf.entries[&key];
     for new_out in &entry.implicit_outputs {
         if producers.contains_key(new_out) {
             return Err(format!("multiple rules generate {new_out}"));
@@ -907,6 +972,12 @@ fn merge_dyndep(
         edge.bindings.insert("restat".to_string(), "1".to_string());
     }
     Ok(())
+}
+
+fn read_dyndep(path: &str) -> Result<dyndep::DyndepFile, String> {
+    let source =
+        std::fs::read_to_string(path).map_err(|e| format!("loading dyndep '{path}': {e}"))?;
+    dyndep::parse(&source).map_err(|e| format!("dyndep '{path}': {e}"))
 }
 
 /// Everything needed to run an edge in a worker thread, pre-resolved on

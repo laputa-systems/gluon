@@ -39,6 +39,10 @@ sync, and `~/d/view` through its toolchain target. Building from source is `carg
 The `dist` profile is the release profile used by CI and releases
 (fat LTO, one codegen unit, stripped).
 
+For build trees generated before Gluon declared the `PHONY` install
+dependency, rerun `meson setup --reconfigure builddir srcdir` with the
+original setup options before running `ninja install`.
+
 ## License
 
 `crates/meson` is MIT or Apache-2.0 (Oxidized Meson MIT; Meson Apache-2.0 —
