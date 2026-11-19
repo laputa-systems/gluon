@@ -983,6 +983,12 @@ impl Cli {
             "source_dir": source_dir.clone(),
             "build_dir": build_dir.clone(),
             "options": args.options.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>(),
+            "cross_file": args.cross_file.as_ref().map(|path| std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path)).to_string_lossy().into_owned()).unwrap_or_default(),
+            "native_file": args.native_file.as_ref().map(|path| {
+                let path = Path::new(path);
+                let path = if path.is_absolute() { path.to_path_buf() } else { Path::new(&source_dir).join(path) };
+                std::fs::canonicalize(&path).unwrap_or(path).to_string_lossy().into_owned()
+            }).unwrap_or_default(),
         });
         let _ = std::fs::write(
             format!("{}/meson-private/cmd_line.txt", build_dir),
@@ -1060,8 +1066,8 @@ impl Cli {
             source_dir,
             build_dir: args.build_dir.clone(),
             options: all_options,
-            cross_file: None,
-            native_file: None,
+            cross_file: saved["cross_file"].as_str().filter(|path| !path.is_empty()).map(str::to_owned),
+            native_file: saved["native_file"].as_str().filter(|path| !path.is_empty()).map(str::to_owned),
             reconfigure: true,
             wipe: false,
         })
