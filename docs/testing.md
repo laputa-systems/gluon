@@ -15,6 +15,9 @@ first on `PATH` before running the corpus.
 For successful Ninja fixtures, the harness compares file contents and
 requires the second build to exit successfully without executing an edge.
 `make test-ci` exercises each check with an injected failure.
+For linked binaries and archives compared by symbols, the harness reads
+defined global symbols in portable `nm` format. Archive member headings
+are ignored, and an extraction error fails the fixture.
 
 The expected-fail ledger (`tests/differential/expected-fail`) lists
 fixtures known to diverge, one per line with a one-line cause. The harness
