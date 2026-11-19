@@ -5,18 +5,29 @@ Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/mai
 
 ## Report
 
-Not started.
+Ground at `2a1bca45da57bc36da9a60e1666bd392c9fe011f` used
+macOS ARM64 and pinned nightly 2026-11-09. The default Make goal
+remains lint. The new `make test` alias runs the locked dist suite
+used by the existing PR job. The normal workflow also runs on main.
+
+With `TMPDIR="$PWD/.work/tmp"`, `CARGO_BUILD_JOBS=2`, and an
+isolated `CARGO_TARGET_DIR`, both `make test` runs passed 85
+top-level cases and one filtered child case. The empty-target run
+took 278.19 s and the repeat took 4.81 s. Clippy passed in 291.12 s.
+These observations include shared host load and compiler caching.
+Cargo reported existing warnings about the workspace edition and
+the `glob` dependency.
+
+The workspace has eight packages. Tracked Rust and Python files
+contain 32,758 and 397 physical lines respectively, including
+tests and comments. [Verification](AGENTS.md#verification)
+records the owning boundaries and both fleet consumers. The
+existing benchmark suite remains the workload for build hot paths.
+Consumer, differential, install and release performance gates
+remain separate work.
 
 ## Tickets
 
-### DSLP-1 · P2 · Ground: baseline, boundaries, and CI test entry point
-
-- **Area:** deslop · ground
-- **Where:** AGENTS.md, Makefile, .github/workflows/
-- **Problem:** Base 5d2169d; code lines Rust 28.4k, Python 0.3k (fleet/loc/v1, vendored included); timings not yet measured. CI does not run make test: runs tests directly on pull requests; run make test or make test-ci instead so CI and local verification share one entry point. The root Makefile has no test target. Open fleet lint findings: owned-tool-support 3, gha-macos 2, conventional-commits 1. Consumers in the fleet: ffmpeg-build, laputa; their tests are the consumer check for API changes. Perf gate: decide in Ground whether a user-visible hot path needs a workload.
-- **Recommendation:** Run the deslop Ground step. Accept: CI runs make test and is green, and AGENTS.md has a Verification section.
-- **Fix with:** deslop
-- **Effort:** S
 
 ### DSLP-2 · P2 · Diagnose: ultrareview into this backlog
 
