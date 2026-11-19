@@ -15,7 +15,7 @@ TIERS = ('Edit', 'Change', 'Scenario', 'Full')
 WORK = {
     'controls': ('Edit', 'harness', ['python3', 'tests/benchmarks/test_driver.py'], 'selection and preflight controls'),
     **{name: ('Change', name, ['cargo', 'bench', '--locked', '-p', name, '--bench', name], 'synthetic component measurements') for name in ('engine', 'graph', 'state', 'meson', 'ninja')},
-    'cli-corpus': ('Scenario', 'cli', ['bash', 'tests/benchmarks/run.sh'], 'setup and incremental corpus; blocked by DSLP-11'),
+    'cli-corpus': ('Scenario', 'cli', ['bash', 'tests/benchmarks/run.sh'], 'setup and incremental corpus'),
     'all-components': ('Full', 'components', ['cargo', 'bench', '--locked', '--workspace'], 'all component benchmarks'),
 }
 
@@ -52,8 +52,6 @@ def main():
     for n, w in chosen.items():
         if not shutil.which(w[2][0]):
             errors.append(f'{n}: missing {w[2][0]}; install it and retry')
-        if n == 'cli-corpus':
-            errors.append('cli-corpus: DSLP-11 masks build failures; repair the corpus before running it')
     if shutil.disk_usage(ROOT).free < 1024 ** 3:
         errors.append('selected workloads: less than 1 GiB free; free disk space and retry')
     if errors:
