@@ -86,6 +86,13 @@ rerun recorded 53 passes including the two intentional failures, and
 skipped both Wayland fixtures because pkg-config could not resolve their
 dependencies.
 
+The macOS CI runner now builds the candidate and uses the checksum-pinned
+Meson wheel and upstream Ninja archive. A local ARM64 run with freshly
+built candidates and Python 3.14.8 passed 53 fixtures, including two
+intentional failure cases, and skipped the two optional Wayland cases.
+A changed wheel checksum stopped the runner before installation. The
+hosted workflow pins Python 3.14.10 and rejects any other skipped fixture.
+
 ## Tickets
 
 

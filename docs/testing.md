@@ -29,6 +29,13 @@ wayland-client, wayland-protocols and the Wayland scanner. The Alpine
 Check `.work/tmp/diff/results.log` for skips before recording full
 coverage.
 
+The macOS CI job builds both release binaries and runs
+`bash tests/differential/run-macos.sh`. The script verifies the pinned
+Meson wheel and upstream Ninja archive before using them. It accepts a
+skip only for the two Wayland fixtures. For a local run, use Python 3.10
+or newer and build the binaries with
+`cargo build --release --locked -p gluon-meson -p gluon-ninja`.
+
 Gates, narrowest first:
 
 - `cargo test --workspace` — unit/integration suites for all crates.

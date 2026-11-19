@@ -4,6 +4,10 @@
 MESON_VERSION=1.12.1
 NINJA_VERSION=1.13.2
 MUON_VERSION=0.7.0
+MESON_WHEEL_URL=https://files.pythonhosted.org/packages/57/99/36cd25f9598eef70db97577440a70a360af505f6f01c2338a18d1556079c/meson-1.12.1-py3-none-any.whl
+MESON_WHEEL_SHA256=930bc7542cbd9f57009e182fd014eba48cf1a0180a7b9006d2d32d8f168d8b02
+NINJA_MAC_URL=https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-mac.zip
+NINJA_MAC_SHA256=c99048673aa765960a99cf10c6ddb9f1fad506099ff0a0e137ad8960a88f321b
 
 OXIDIZED_MESON_REPO=https://github.com/overby-me/oxidized-meson
 OXIDIZED_MESON_SHA=85dc2261c7f8d30007382c8ae0d54d72fc188a5e
