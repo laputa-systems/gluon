@@ -120,7 +120,6 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
 }
 
 impl Options {
-    #[allow(dead_code)]
     pub fn jobs_count(&self) -> usize {
         // Match reference ninja's GuessParallelism(): cores + 2, with a
         // minimum of 2 even on a single-CPU machine. Tests like

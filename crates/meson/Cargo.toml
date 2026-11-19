@@ -6,7 +6,6 @@ description = "A Meson build system compatible implementation in Rust"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-regex-lite = "0.1"
 deser-json = { version = "0.10.2", default-features = false }
 deser-value = { version = "0.10.2", default-features = false }
 

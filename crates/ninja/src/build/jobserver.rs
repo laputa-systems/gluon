@@ -31,7 +31,7 @@ use std::os::unix::fs::OpenOptionsExt;
 /// `Implicit` variant (no byte to write back); explicit slots carry
 /// the exact byte we read so we can put it back unmodified.
 #[derive(Debug)]
-pub enum Slot {
+pub(super) enum Slot {
     Implicit,
     Explicit(u8),
 }
@@ -41,7 +41,7 @@ pub enum Slot {
 /// blocking but writes a single byte at a time, which is well within
 /// the kernel's atomicity guarantee.
 #[derive(Debug)]
-pub struct Client {
+pub(super) struct Client {
     read_fd: File,
     write_fd: File,
     has_implicit: bool,
@@ -80,7 +80,7 @@ impl Client {
     /// Try to acquire one slot without blocking. Returns `None` if no
     /// token is available right now — the caller should back off and
     /// re-poll once it has reaped a completion.
-    pub fn try_acquire(&mut self) -> Option<Slot> {
+    pub(super) fn try_acquire(&mut self) -> Option<Slot> {
         if self.has_implicit {
             self.has_implicit = false;
             return Some(Slot::Implicit);
@@ -95,7 +95,7 @@ impl Client {
     /// Return a slot to the pool. Implicit slots are tracked locally;
     /// explicit slots are written back to the FIFO/pipe so other
     /// clients (and our own future `try_acquire`) can pick them up.
-    pub fn release(&mut self, slot: Slot) {
+    pub(super) fn release(&mut self, slot: Slot) {
         match slot {
             Slot::Implicit => {
                 self.has_implicit = true;
@@ -113,7 +113,7 @@ impl Client {
 ///   - `Err(message)` if the env requested a mode we can't service —
 ///     the caller should print the message as a warning and proceed
 ///     with the local `-j N` cap.
-pub fn detect_from_env() -> Result<Option<Client>, String> {
+pub(super) fn detect_from_env() -> Result<Option<Client>, String> {
     let makeflags = std::env::var("MAKEFLAGS").unwrap_or_default();
     detect(&makeflags)
 }

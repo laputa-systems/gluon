@@ -1,5 +1,5 @@
 Prefix: DSLP
-Next: 21
+Next: 22
 
 Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/main/docs/campaigns/deslop.md), tier B). One agent works this file with the `deslop` skill: take the lowest-numbered open ticket whose area does not start with `Needs owner ·`. After DSLP-5, work the open P1 and P2 findings, then fill in `## Report` below.
 
@@ -322,6 +322,38 @@ Play rebuilt SPIRV-Cross and libplacebo with the candidate Ninja,
 linked `player-app`, and loaded the resulting libplacebo library
 when started with `--version`.
 
+The Dead code pass checked workspace targets on macOS ARM64 with the
+pinned nightly and default features. Cargo-machete found `regex-lite`
+unused by Meson: source, build registrations, manifests, tests, scripts
+and docs contain no reference beyond that direct dependency. The Meson
+entry points in `bins/meson` and `bins/build` use the Meson crate; the
+Ninja binary, differential fixtures and downstream FFmpeg-build, Laputa
+and Play consume the built commands, not this dependency. The declaration
+was removed; `rustybench` still brings it into the lockfile. No behavior or
+public API was removed. Consumer builds and the full differential corpus
+were not rerun for this static change; `make test` exercises the harness
+controls and workspace suite. Other platforms and feature combinations were
+not run.
+
+The compiler found 16 unreachable public declarations in private Ninja
+modules. The dyndep parser and its types, binding lookups and jobserver
+client are called by `build::runner`; the six tool functions are registered
+in `tools::run`. Their visibility was restricted without removing them.
+The scheduler calls `Options::jobs_count`; engine equivalence tests and Ninja
+benchmarks call `manifest::parse`. Five unnecessary dead-code suppressions
+were removed, including three on the public state dependency log API.
+`close` and `recompact` have unit-test callers; `needs_recompaction` has no
+reader. DSLP-21 records the owner decision for that exposed API. The
+all-target compiler scan includes the test-only helpers: Meson's help test
+calls `example_matches`, and Ninja help and tool tests call `example_args`.
+No warning allowlist is needed.
+
+The debloat review kept the public engine queue, used by its test and
+benchmark, and the CLI, manifest, dependency-state and differential layers:
+they expose APIs or preserve build and compatibility contracts. No proven
+behavior-preserving structural cut beyond the dependency was identified.
+Existing Findings tickets and the benchmark timing gates were left alone.
+
 ## Tickets
 
 
@@ -336,14 +368,6 @@ when started with `--version`.
 
 
 
-### DSLP-5 · P2 · Dead code: tools and debloat
-
-- **Area:** deslop · dead code
-- **Where:** whole repository
-- **Problem:** No dead-code scan has run.
-- **Recommendation:** Run the deslop Dead code step. Accept: tools clean or allowlisted with reasons; walk-backs filed as Needs owner tickets.
-- **Fix with:** deslop
-- **Effort:** M
 
 ### DSLP-11 · P2 · benchmark gate passes when its build commands fail
 
@@ -440,4 +464,13 @@ when started with `--version`.
 - **Problem:** Use project('m') in meson.build and an unterminated option( in meson.options. Gluon setup exits zero. Meson 1.12.1 exits one and reports the unexpected end at meson.options:1:8.
 - **Recommendation:** Surface read and syntax failures with file and position. Preserve optional and valid option files.
 - **Fix with:** error-model
+- **Effort:** S
+
+### DSLP-21 · P3 · decide whether to retire unused deps log recompaction API
+
+- **Area:** Needs owner · state public API
+- **Where:** crates/state/src/deps_log.rs:46,248,256; crates/ninja/src/build/mod.rs:5
+- **Problem:** The exported needs_recompaction field has no reader and remains false; recompact is called only by a unit test and close by that method and tests. Removing them changes the state crate API, also re-exported by ninja, and possible external consumers are unknown.
+- **Recommendation:** Decide whether consumers may lose these members; if so remove them and the recompact-only test, preserving the supported on-disk format.
+- **Fix with:** dead-code-archaeology
 - **Effort:** S
