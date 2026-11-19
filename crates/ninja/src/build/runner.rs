@@ -142,6 +142,7 @@ fn validate_plan<'a>(state: &'a State, targets: &[String]) -> Result<BuildPlan<'
     let mut producers = Cow::Borrowed(&state.producers);
     let mut existing_sources = HashSet::new();
     let mut inspected_dyndeps = HashSet::new();
+    let mut previous_logs = None;
     loop {
         let consumed = plan.iter().flat_map(|&index| {
             let edge = &state.edges[index];
@@ -183,6 +184,13 @@ fn validate_plan<'a>(state: &'a State, targets: &[String]) -> Result<BuildPlan<'
             if !inspected_dyndeps.insert(path) || !std::path::Path::new(path).is_file() {
                 continue;
             }
+            if state.producers.contains_key(path) {
+                let (build_log, deps_log) = previous_logs
+                    .get_or_insert_with(|| (log::load(".ninja_log"), DepsLog::load(".ninja_deps")));
+                if !producer_is_ready(state, path, build_log, deps_log, &mut HashSet::new())? {
+                    continue;
+                }
+            }
             let dyndep = read_dyndep(path)?;
             let mut inspected_edges = HashSet::new();
             for output in dyndep.entries.keys() {
@@ -208,6 +216,96 @@ fn validate_plan<'a>(state: &'a State, targets: &[String]) -> Result<BuildPlan<'
         }
         plan = build_plan_with_producers(state, targets, &producers)?;
     }
+}
+
+fn producer_is_ready(
+    state: &State,
+    path: &str,
+    build_log: &log::BuildLog,
+    deps_log: &DepsLog,
+    checking: &mut HashSet<String>,
+) -> Result<bool, String> {
+    if !checking.insert(path.to_string()) {
+        return Err(format!("dependency cycle through '{path}'"));
+    }
+    let plan = build_plan(state, &[path.to_string()])?;
+    let mut phony_mtimes = HashMap::new();
+    let mut dirty = HashMap::new();
+    for index in plan {
+        let mut edge = Cow::Borrowed(&state.edges[index]);
+        if let Some(path) = edge.dyndep.as_deref() {
+            if !std::path::Path::new(path).is_file() {
+                return Ok(false);
+            }
+            let file = read_dyndep(path)?;
+            if let Some(entry) = file.entry_for(&edge.outputs) {
+                for input in &entry.implicit_inputs {
+                    let producer = if state.producers.contains_key(input) {
+                        Some(input)
+                    } else {
+                        file.entries.iter().find_map(|(output, declaration)| {
+                            let &index = state.producers.get(output)?;
+                            (state.edges[index].dyndep.as_deref() == Some(path)
+                                && declaration.implicit_outputs.contains(input))
+                            .then_some(output)
+                        })
+                    };
+                    if let Some(producer) = producer
+                        && !producer_is_ready(state, producer, build_log, deps_log, checking)?
+                    {
+                        return Ok(false);
+                    }
+                }
+                let edge = edge.to_mut();
+                edge.implicit_inputs.extend_from_slice(&entry.implicit_inputs);
+                edge.implicit_outputs.extend_from_slice(&entry.implicit_outputs);
+                if entry.restat {
+                    edge.bindings.insert("restat".to_string(), "1".to_string());
+                }
+            }
+        }
+        if edge
+            .inputs
+            .iter()
+            .chain(&edge.implicit_inputs)
+            .chain(&edge.order_only_inputs)
+            .any(|input| !state.producers.contains_key(input) && mtime_of(input).is_none())
+        {
+            return Ok(false);
+        }
+        if edge.is_phony() {
+            let mtime = newest_input_mtime(&edge, &phony_mtimes);
+            for output in edge.outputs.iter().chain(&edge.implicit_outputs) {
+                phony_mtimes.insert(output.clone(), mtime);
+                if edge.inputs.is_empty() && edge.implicit_inputs.is_empty() {
+                    dirty.insert(output.clone(), true);
+                }
+            }
+            continue;
+        }
+        let Some(rule) = state.rules.get(&edge.rule) else {
+            return Ok(false);
+        };
+        let command = rule.bindings.get("command").map(String::as_str).unwrap_or("");
+        let hash = log::hash_command(&expand_in_edge(state, &edge, command));
+        if edge.outputs.iter().chain(&edge.implicit_outputs).any(|output| {
+            !build_log.entries.get(output).is_some_and(|entry| entry.command_hash == hash)
+        }) {
+            return Ok(false);
+        }
+        mark_depfile_dirty(state, &edge, deps_log, &mut dirty);
+        if edge_needs_run(
+            &edge,
+            &dirty,
+            &phony_mtimes,
+            build_log,
+            rule_has_restat(state, &edge),
+        ) {
+            return Ok(false);
+        }
+    }
+    checking.remove(path);
+    Ok(true)
 }
 
 /// Dependency-driven scheduler. Walks the topologically-ordered plan and
@@ -331,7 +429,6 @@ fn schedule(
     // Per-edge expanded command (used for both hashing and dispatch). We
     // compute it up front so we can both seed cross-invocation dirtiness
     // and avoid re-expanding the same command at completion time.
-    let mut commands: Vec<String> = vec![String::new(); plan.len()];
     let mut command_hashes: Vec<u64> = vec![0; plan.len()];
     for (slot, &edge_idx) in plan.iter().enumerate() {
         let edge = &edges[edge_idx];
@@ -348,7 +445,6 @@ fn schedule(
             .unwrap_or("");
         let cmd = expand_in_edge(state, edge, raw);
         command_hashes[slot] = log::hash_command(&cmd);
-        commands[slot] = cmd;
     }
 
     // Initial node dirtiness — kept deliberately minimal:
@@ -368,77 +464,8 @@ fn schedule(
         }
     }
 
-    // Depfile-driven dirtiness. For each edge that declares
-    // `depfile = ...`, read the file gcc/clang dropped on the previous
-    // run and compare the output mtime against every listed
-    // prerequisite. If any prereq is newer (or has been deleted) the
-    // output is marked dirty so the dispatch-time `edge_needs_run`
-    // check fires the rebuild. Missing depfiles are silently ignored
-    // — that's the cold-build path where the edge is dirty anyway
-    // because its output doesn't exist yet.
     for &edge_idx in plan.iter() {
-        let edge = &edges[edge_idx];
-        let Some(rule) = state.rules.get(&edge.rule) else {
-            continue;
-        };
-        let Some(depfile_path) = edge_binding(state, edge, rule, "depfile") else {
-            continue;
-        };
-        if depfile_path.is_empty() {
-            continue;
-        }
-        // Two sources of recorded prerequisites:
-        //   1. the depfile that the previous run dropped on disk, if it
-        //      still exists (the cold path on freshly-checked-out trees);
-        //   2. `.ninja_deps`, which is what `deps = gcc|msvc` populates
-        //      after consuming and unlinking the depfile.
-        // We prefer the on-disk depfile when present (it's what the
-        // compiler just wrote), but fall back to the cached deps log
-        // when the depfile has been consumed — that's what makes
-        // incremental rebuilds work after a `deps = gcc` rule fires.
-        let depfile_text = std::fs::read_to_string(&depfile_path).ok();
-        let parsed = depfile_text.as_deref().map(depfile::parse);
-        let uses_deps_cache = matches!(
-            lookup_either(edge, rule, "deps").as_deref(),
-            Some("gcc") | Some("msvc")
-        );
-        for out in edge.outputs.iter().chain(&edge.implicit_outputs) {
-            let deps_from_depfile = parsed
-                .as_ref()
-                .and_then(|p| p.targets.get(out))
-                .map(|v| v.as_slice());
-            let deps_from_log = if deps_from_depfile.is_none() && uses_deps_cache {
-                deps_log.records.get(out).map(|r| r.deps.as_slice())
-            } else {
-                None
-            };
-            let Some(deps) = deps_from_depfile.or(deps_from_log) else {
-                continue;
-            };
-            let out_mtime = mtime_of(out);
-            let mut out_is_dirty = false;
-            for dep in deps {
-                match mtime_of(dep) {
-                    None => {
-                        // A previously-tracked header was removed —
-                        // force a rebuild so the next compile fails
-                        // loudly (or picks up a moved header).
-                        out_is_dirty = true;
-                        break;
-                    }
-                    Some(dep_mtime) => match out_mtime {
-                        Some(out_m) if dep_mtime <= out_m => {}
-                        _ => {
-                            out_is_dirty = true;
-                            break;
-                        }
-                    },
-                }
-            }
-            if out_is_dirty {
-                dirty.insert(out.clone(), true);
-            }
-        }
+        mark_depfile_dirty(state, &edges[edge_idx], &deps_log, &mut dirty);
     }
 
     // Compare output times at dispatch, after the dyndep file has supplied
@@ -476,6 +503,11 @@ fn schedule(
             for &edge_idx in plan.iter() {
                 if let Some(dd_path) = edges[edge_idx].dyndep.clone()
                     && !dyndep_loaded.contains(&edge_idx)
+                    && state
+                        .producers
+                        .get(&dd_path)
+                        .and_then(|producer| idx_in_plan.get(producer))
+                        .is_none_or(|&slot| done[slot])
                     && std::path::Path::new(&dd_path).exists()
                 {
                     match merge_dyndep(
@@ -498,11 +530,9 @@ fn schedule(
             if dyndep_failure.is_some() {
                 continue;
             }
-            // To reliably detect dyndep collisions, defer dispatching
-            // any consumer of a dyndep file until *every* dyndep-producing
-            // edge in this plan has finished — otherwise we can race a
-            // consumer ahead of the second producer's completion and miss
-            // the "multiple rules generate X" check.
+            // Detect dyndep collisions before dispatching ordinary consumers.
+            // A producer with its own dyndep must be able to run once that
+            // dependency is ready.
             let pending_dyndep_producers: HashSet<usize> = edges
                 .iter()
                 .filter_map(|e| e.dyndep.as_deref())
@@ -522,7 +552,14 @@ fn schedule(
                 }
                 let edge_idx = plan[slot];
                 if let Some(path) = &edges[edge_idx].dyndep {
-                    if !pending_dyndep_producers.is_empty() {
+                    let waiting_for_metadata = state
+                        .producers
+                        .get(path)
+                        .is_some_and(|producer| pending_dyndep_producers.contains(producer));
+                    if waiting_for_metadata
+                        || (!pending_dyndep_producers.is_empty()
+                            && !pending_dyndep_producers.contains(&edge_idx))
+                    {
                         continue;
                     }
                     if !dyndep_loaded.contains(&edge_idx) {
@@ -953,6 +990,48 @@ fn newest_input_mtime(
             None => mtime_of(input),
         })
         .max()
+}
+
+fn mark_depfile_dirty(
+    state: &State,
+    edge: &Edge,
+    deps_log: &DepsLog,
+    dirty: &mut HashMap<String, bool>,
+) {
+    let Some(rule) = state.rules.get(&edge.rule) else {
+        return;
+    };
+    let Some(path) = edge_binding(state, edge, rule, "depfile").filter(|path| !path.is_empty()) else {
+        return;
+    };
+    let text = std::fs::read_to_string(path).ok();
+    let parsed = text.as_deref().map(depfile::parse);
+    let uses_deps_cache = matches!(
+        lookup_either(edge, rule, "deps").as_deref(),
+        Some("gcc") | Some("msvc")
+    );
+    for out in edge.outputs.iter().chain(&edge.implicit_outputs) {
+        let deps = parsed
+            .as_ref()
+            .and_then(|depfile| depfile.targets.get(out))
+            .map(Vec::as_slice)
+            .or_else(|| {
+                if uses_deps_cache {
+                    deps_log.records.get(out).map(|record| record.deps.as_slice())
+                } else {
+                    None
+                }
+            });
+        if let Some(deps) = deps {
+            let output_mtime = mtime_of(out);
+            if deps.iter().any(|dep| match (mtime_of(dep), output_mtime) {
+                (Some(input), Some(output)) => input > output,
+                _ => true,
+            }) {
+                dirty.insert(out.clone(), true);
+            }
+        }
+    }
 }
 
 fn rule_has_restat(state: &State, edge: &Edge) -> bool {
