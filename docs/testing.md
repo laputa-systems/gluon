@@ -53,10 +53,16 @@ Gates, narrowest first:
   to verify static Linux musl artifacts on either architecture.
   `tests/upstream/musl.sh` checks only x86-64 binary invocation.
 - Rustybench harnesses in `crates/*/benches` measure parse and plan work.
-  The shell benchmark attempts setup and Ninja runs, but it skips
-  equivalent-work checks. Use paired workloads with failing commands
-  surfaced and outputs verified. Run `perf-gate-ready` before timing and
-  `perf-gate-ready -1` immediately after.
+- For workflow timings, build with
+  `cargo build --profile dist --locked -p gluon-meson -p gluon-ninja`
+  and run `bash tests/benchmarks/run.sh` with the pinned reference tools
+  on `PATH`. The harness alternates five reference and candidate pairs.
+  It checks executable output after setup, reconfigure, source rebuild,
+  and header rebuild. The 1,000-, 10,000-, and 100,000-edge warm graphs
+  share a small compiled program and vary the number of phony targets
+  that reach its objects. Warm runs must preserve output and log snapshots.
+  The report prints wall time, CPU time and peak RSS after both host
+  readiness checks pass. Exit 75 means a host-load deferral.
 
 ## Consumer checks
 
