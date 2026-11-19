@@ -402,14 +402,6 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 
 
 
-### DSLP-15 · P2 · Meson configure drops machine-file options
-
-- **Area:** Meson reconfiguration state
-- **Where:** crates/meson/src/cli.rs:981,1059
-- **Problem:** Set c_args = ['-DMACHINE_VALUE=7'] in a cross file's built-in options and compile a program returning MACHINE_VALUE. After meson configure -Dbuildtype=debug build, Gluon drops the flag and Ninja cannot compile. Meson 1.12.1 preserves it and the executable returns seven.
-- **Recommendation:** Retain machine-file paths and setup semantics across configuration. Verify native and cross files and an existing build directory.
-- **Fix with:** durable-state
-- **Effort:** M
 
 
 ### DSLP-19 · P2 · integrated Meson emits invalid self-invocations
