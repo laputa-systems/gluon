@@ -11,7 +11,9 @@ from pathlib import Path
 class BenchmarkGate(unittest.TestCase):
     def run_gate(self, meson: str, ninja: str) -> subprocess.CompletedProcess[str]:
         source = Path(__file__).resolve().parent
-        with tempfile.TemporaryDirectory() as temporary:
+        scratch = source.parents[1] / ".work/tmp"
+        scratch.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=scratch) as temporary:
             root = Path(temporary)
             benchmark = root / "tests/benchmarks"
             benchmark.mkdir(parents=True)

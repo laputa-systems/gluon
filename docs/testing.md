@@ -56,7 +56,9 @@ Gates, narrowest first:
 - For workflow timings, build with
   `cargo build --profile dist --locked -p gluon-meson -p gluon-ninja`
   and run `bash tests/benchmarks/run.sh` with the pinned reference tools
-  on `PATH`. The harness alternates five reference and candidate pairs.
+  on `PATH`. For a separate Cargo target directory, set `GLUON_MESON`
+  and `GLUON_NINJA` to its dist executables. The harness alternates
+  five reference and candidate pairs.
   It checks executable output after setup, reconfigure, source rebuild,
   and header rebuild. The 1,000-, 10,000-, and 100,000-edge warm graphs
   share a small compiled program and vary the number of phony targets

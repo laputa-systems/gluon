@@ -52,7 +52,7 @@ def run(cwd: Path, *command: str | Path) -> str:
 
 
 def timed(cwd: Path, *command: str | Path) -> tuple[Sample, str]:
-    with tempfile.TemporaryFile() as log:
+    with tempfile.TemporaryFile(dir=cwd) as log:
         start = time.perf_counter()
         with subprocess.Popen(command, cwd=cwd, env=ENV, stdout=log, stderr=log) as child:
             _, status, usage = os.wait4(child.pid, 0)
