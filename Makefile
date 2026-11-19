@@ -7,6 +7,8 @@ test: test-ci
 
 test-ci:
 	bash tests/differential/test-references.sh
+	bash tests/differential/test-symbols.sh
+	bash tests/differential/test-ninja-observables.sh
 	cargo test --profile dist --locked
 
 clean:

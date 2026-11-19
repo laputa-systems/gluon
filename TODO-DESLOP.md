@@ -49,6 +49,23 @@ In the full repeat, four fixtures still shared failures. Two required
 unavailable Wayland dependencies, and the other two were the intentional
 missing install script and missing Ninja dependency cases.
 
+The harness now rejects changed Ninja output bytes, commands during the
+idle repeat, and failed idle exits. The shell regression runs each fault
+through the fixture runner. Archive symbol comparison ignores member
+headings and rejects an `nm` failure even after partial output. The
+symbol regression passed with both Apple and GNU `nm`.
+
+The 55-fixture run used the `release-fa8b6aa` binaries and upstream Meson
+1.12.1 and Ninja 1.13.2 on macOS ARM64 and Alpine 3.24.2 ARM64. The Linux
+Ninja was built from upstream `3441b633`; the PyPI Ninja wheel identifies
+itself as a modified build and was rejected. Both Wayland fixtures linked
+on Alpine with wayland-dev 1.25.0-r0 and wayland-protocols 1.48-r0.
+On macOS those two cases shared missing-dependency exits. On Alpine
+`generator-depends` shared a duplicate-symbol failure and
+`pkgconfig-generate` shared a missing zlib failure. Both runs also
+reported the intentional failing install-script and missing-dependency
+fixtures. GLU-28 and the full hosted parity gate stay open.
+
 ## Tickets
 
 
