@@ -50,6 +50,19 @@ pub fn run_targets(
     targets_override: Option<&[String]>,
     announce_no_work: bool,
 ) -> Result<RunReport, String> {
+    let (code, work) = run_selection(state, opts, targets_override, announce_no_work)?;
+    Ok(RunReport {
+        code,
+        ran: work && !opts.dry_run,
+    })
+}
+
+pub(crate) fn run_selection(
+    state: &State,
+    opts: &Options,
+    targets_override: Option<&[String]>,
+    announce_no_work: bool,
+) -> Result<(u8, bool), String> {
     let targets = match targets_override {
         Some(t) => t.to_vec(),
         None => resolve_targets(state, opts),
@@ -58,10 +71,7 @@ pub fn run_targets(
         if !opts.quiet && announce_no_work {
             println!("ninja: no work to do.");
         }
-        return Ok(RunReport {
-            code: 0,
-            ran: false,
-        });
+        return Ok((0, false));
     }
     // Surface unknown explicit targets the way ninja does — an error to
     // stdout, exit 1. Source files (no producer) are accepted only when
@@ -75,7 +85,7 @@ pub fn run_targets(
             });
             if !known {
                 println!("ninja: error: unknown target '{t}'");
-                return Ok(RunReport { code: 1, ran: false });
+                return Ok((1, false));
             }
         }
     }
@@ -88,48 +98,20 @@ pub fn run_targets(
         if !opts.quiet && announce_no_work {
             println!("ninja: no work to do.");
         }
-        return Ok(RunReport {
-            code: 0,
-            ran: false,
-        });
+        return Ok((0, false));
     }
 
     let real_count = plan.iter().filter(|&&i| !state.edges[i].is_phony()).count();
-    if opts.dry_run {
-        let mode = Mode::detect();
-        let _ = mode;
-        let mut n = 0usize;
-        let total = real_count;
-        for &edge_idx in &plan {
-            let edge = &state.edges[edge_idx];
-            if edge.is_phony() {
-                continue;
-            }
-            n += 1;
-            if !opts.quiet {
-                println!("[{n}/{total}] command");
-            }
-        }
-        if n == 0 && !opts.quiet {
-            println!("ninja: no work to do.");
-        }
-        return Ok(RunReport { code: 0, ran: false });
-    }
     let mode = Mode::detect();
     let mut status = Status::new(mode, opts.quiet, opts.verbose, real_count);
-    let (result, ran) = schedule(
+    schedule(
         state,
         opts,
         &plan,
         &producers,
         &mut status,
         announce_no_work,
-    )?;
-    if result == 0 && real_count == 0 && !opts.quiet {
-        // All edges in the plan turned out to be phony — preserve the
-        // legacy "no work to do" message.
-    }
-    Ok(RunReport { code: result, ran })
+    )
 }
 
 struct BuildPlan<'a> {
@@ -329,7 +311,7 @@ fn schedule(
     // user did *not* pass `-j N` explicitly — `-j N` always wins,
     // matching reference ninja. A pipe-mode jobserver is rejected
     // with a friendly stderr warning and we fall back to local `-j`.
-    let mut jobserver_client = if opts.jobs.is_none() {
+    let mut jobserver_client = if !opts.dry_run && opts.jobs.is_none() {
         match jobserver::detect_from_env() {
             Ok(c) => c,
             Err(msg) => {
@@ -352,10 +334,9 @@ fn schedule(
     // first; explicit slots are written back to the FIFO on release.
     let mut held_slots: Vec<Option<Slot>> = (0..plan.len()).map(|_| None).collect();
 
-    // Map edge index → its dependencies (inputs that have a producer in
-    // the plan). We use this to detect when an edge becomes ready.
     let in_plan: HashSet<usize> = plan.iter().copied().collect();
-    let mut deps: Vec<Vec<usize>> = vec![Vec::new(); plan.len()];
+    let mut dependents = vec![Vec::new(); plan.len()];
+    let mut remaining = vec![0; plan.len()];
     let mut idx_in_plan = std::collections::HashMap::with_capacity(plan.len());
     for (slot, &edge_idx) in plan.iter().enumerate() {
         idx_in_plan.insert(edge_idx, slot);
@@ -376,12 +357,12 @@ fn schedule(
                 && let Some(&dep_slot) = idx_in_plan.get(&prod)
                 && seen_dep.insert(dep_slot)
             {
-                deps[slot].push(dep_slot);
+                dependents[dep_slot].push(slot);
+                remaining[slot] += 1;
             }
         }
     }
 
-    let mut remaining: Vec<usize> = (0..plan.len()).map(|s| deps[s].len()).collect();
     let mut done = vec![false; plan.len()];
     let mut started = vec![false; plan.len()];
     let mut in_flight = 0usize;
@@ -402,6 +383,8 @@ fn schedule(
     // every edge in the plan was skipped (clean / phony) we still owe
     // the user the canonical "ninja: no work to do." message.
     let mut any_real_work = false;
+    let mut preview = Vec::new();
+    let mut preview_failure = None;
     // Per-edge mutable copies so dyndep merges (extra outputs/inputs)
     // can land on the right edge before dispatch.
     let mut edges: Vec<Edge> = state.edges.to_vec();
@@ -422,7 +405,7 @@ fn schedule(
     // still triggers a rebuild today, then keep a writer open to append
     // fresh entries as edges complete.
     let prev_log = log::load(".ninja_log");
-    let mut log_writer = log::Writer::new(".ninja_log");
+    let mut log_writer = (!opts.dry_run).then(|| log::Writer::new(".ninja_log"));
     // Cross-invocation depfile cache. After a successful gcc/msvc edge
     // we store its discovered headers here and unlink the depfile, so
     // the next ninja invocation can answer "is this output stale?"
@@ -566,9 +549,13 @@ fn schedule(
                         continue;
                     }
                     if !dyndep_loaded.contains(&edge_idx) {
-                        dyndep_failure =
-                            Some(format!("error: loading '{path}': dyndep file is missing"));
-                        break;
+                        if opts.dry_run {
+                            preview_failure.get_or_insert_with(|| (preview.len(), path.clone()));
+                        } else {
+                            dyndep_failure =
+                                Some(format!("error: loading '{path}': dyndep file is missing"));
+                            break;
+                        }
                     }
                 }
                 // Pool capacity check. Only real (non-phony) edges
@@ -618,29 +605,23 @@ fn schedule(
                     // Phony "completes" instantly; mark done inline so we
                     // can dispatch its dependents on this same loop turn.
                     started[slot] = true;
-                    done[slot] = true;
                     dyndep_producer_completed_inline |= pending_dyndep_producers.contains(&edge_idx);
-                    for s2 in 0..plan.len() {
-                        if deps[s2].contains(&slot) && !done[s2] {
-                            remaining[s2] = remaining[s2].saturating_sub(1);
-                        }
-                    }
+                    complete_slot(slot, &dependents, &mut done, &mut remaining);
                     continue;
                 }
                 let restat = rule_has_restat(state, &edge);
                 let needs = edge_needs_run(state, &edge, &dirty, &phony_mtimes, &prev_log, restat);
-                if !needs {
+                if !needs || opts.dry_run {
+                    if needs {
+                        let (_, shown) = describe_command(state, &edge, opts)?;
+                        preview.push(shown);
+                    }
                     started[slot] = true;
                     for o in edge.outputs.iter().chain(&edge.implicit_outputs) {
-                        dirty.insert(o.clone(), false);
+                        dirty.insert(o.clone(), needs);
                     }
-                    done[slot] = true;
                     dyndep_producer_completed_inline |= pending_dyndep_producers.contains(&edge_idx);
-                    for s2 in 0..plan.len() {
-                        if deps[s2].contains(&slot) && !done[s2] {
-                            remaining[s2] = remaining[s2].saturating_sub(1);
-                        }
-                    }
+                    complete_slot(slot, &dependents, &mut done, &mut remaining);
                     continue;
                 }
                 let acquired_slot = if let Some(c) = jobserver_client.as_mut() {
@@ -774,7 +755,6 @@ fn schedule(
         for (outcome, command_started) in batch {
             in_flight -= 1;
             let slot = outcome.slot;
-            done[slot] = true;
             // Release the pool slot this edge held, if any.
             if let Some(name) = pool_for_edge(state, &edges[plan[slot]])
                 && !edges[plan[slot]].is_phony()
@@ -790,11 +770,7 @@ fn schedule(
             {
                 c.release(slot_token);
             }
-            for s2 in 0..plan.len() {
-                if deps[s2].contains(&slot) && !done[s2] {
-                    remaining[s2] = remaining[s2].saturating_sub(1);
-                }
-            }
+            complete_slot(slot, &dependents, &mut done, &mut remaining);
             // Update dirty status for the outputs based on restat.
             if outcome.restat {
                 let after: Vec<Option<SystemTime>> = outcome
@@ -853,7 +829,9 @@ fn schedule(
                             mtime_ns: recorded_ns,
                             command_hash: outcome.command_hash,
                         };
-                        log_writer.record(std::slice::from_ref(out), &entry);
+                        if let Some(writer) = &mut log_writer {
+                            writer.record(std::slice::from_ref(out), &entry);
+                        }
                     }
                     // For `deps = gcc|msvc` edges: parse the freshly
                     // dropped depfile, persist the discovered headers
@@ -911,6 +889,22 @@ fn schedule(
         }
     }
 
+    if opts.dry_run {
+        let mut status = Status::new(Mode::detect(), opts.quiet, opts.verbose, preview.len());
+        let (visible, missing) = match &preview_failure {
+            Some((visible, path)) => (*visible, Some(path)),
+            None => (preview.len(), None),
+        };
+        for shown in &preview[..visible] {
+            status.build_finished(shown, &[]);
+        }
+        status.finish();
+        if let Some(path) = missing {
+            println!("ninja: build stopped: loading '{path}': No such file or directory.");
+            return Ok((1, visible != 0));
+        }
+        any_real_work = visible != 0;
+    }
     status.finish();
     if interrupted {
         println!("ninja: build stopped: interrupted by user.");
@@ -933,6 +927,15 @@ fn schedule(
         println!("ninja: no work to do.");
     }
     Ok((0, any_real_work))
+}
+
+fn complete_slot(slot: usize, dependents: &[Vec<usize>], done: &mut [bool], remaining: &mut [usize]) {
+    done[slot] = true;
+    for &dependent in &dependents[slot] {
+        if !done[dependent] {
+            remaining[dependent] -= 1;
+        }
+    }
 }
 
 /// Decide whether the edge still needs to run *right now*. An edge
@@ -1132,7 +1135,7 @@ struct Prepared {
     rspfile: Option<(String, String)>,
 }
 
-fn prepare(state: &State, edge: &Edge, opts: &Options) -> Result<Prepared, String> {
+fn describe_command(state: &State, edge: &Edge, opts: &Options) -> Result<(String, String), String> {
     let rule = state
         .rules
         .get(&edge.rule)
@@ -1156,7 +1159,12 @@ fn prepare(state: &State, edge: &Edge, opts: &Options) -> Result<Prepared, Strin
     } else {
         description
     };
+    Ok((command, shown))
+}
 
+fn prepare(state: &State, edge: &Edge, opts: &Options) -> Result<Prepared, String> {
+    let (command, shown) = describe_command(state, edge, opts)?;
+    let rule = &state.rules[&edge.rule];
     // Output and depfile parent dirs are created up-front so commands can
     // assume the output directory exists. Matches
     // `test_depfile_directory_creation`.
