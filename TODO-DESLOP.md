@@ -110,6 +110,15 @@ gate is deferred because `perf-gate-ready` reported a hot OrbStack
 process tree. DSLP-7 through DSLP-9 retain the separate incremental
 and generated-metadata failures reproduced on the prior release.
 
+The clean dyndep fixture primes two metadata producers before building
+the defaults. The old scheduler returned zero with four files missing.
+The candidate produced matching primary, generated, output and separate
+files with Ninja 1.13.2, then stayed idle. A phony producer that left
+its declared metadata absent returned exit one and produced no consumer
+output. The macOS corpus passed 56 fixtures with two Wayland skips.
+Stable Alpine passed all 58 with zero skips. Both counts include three
+intentional failures.
+
 ## Tickets
 
 
@@ -132,14 +141,6 @@ and generated-metadata failures reproduced on the prior release.
 - **Fix with:** reference-parity
 - **Effort:** M
 
-### DSLP-9 · P1 · Ninja can finish early after skipping a clean dyndep producer
-
-- **Area:** Ninja scheduling
-- **Where:** crates/ninja/src/build/runner.rs
-- **Problem:** Use a cp rule to generate deps.dd from a file declaring extra as an implicit output of a. Bind the a and out edges to deps.dd, have out declare extra as an implicit input, and default a and out. Build only deps.dd and then run the defaults. Upstream Ninja 1.13.2 produces a, extra and out. Gluon release-fa8b6aa and the declared-input fix exit zero without creating any of them. Skipping the clean metadata producer clears ordinary dependencies but leaves the in-loop pending metadata set stale, and the scheduler exits without another dispatch pass.
-- **Recommendation:** Make queue readiness observe a clean metadata producer completing in the same scheduler pass. Verify files and exit code when a clean producer has both direct and independent downstream edges.
-- **Fix with:** reference-parity
-- **Effort:** M
 
 
 ### DSLP-2 · P2 · Diagnose: ultrareview into this backlog

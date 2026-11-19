@@ -480,6 +480,7 @@ fn schedule(
         // — let in-flight jobs drain so their output is preserved.
         let stop_dispatching =
             failure_count >= failure_limit || interrupted || dyndep_failure.is_some();
+        let mut dyndep_producer_completed_inline = false;
         if !stop_dispatching {
             // Eagerly merge every loadable dyndep file before deciding
             // which edges to dispatch. Loading them up-front means a
@@ -534,8 +535,15 @@ fn schedule(
                     break;
                 }
                 let edge_idx = plan[slot];
-                if edges[edge_idx].dyndep.is_some() && !pending_dyndep_producers.is_empty() {
-                    continue;
+                if let Some(path) = &edges[edge_idx].dyndep {
+                    if !pending_dyndep_producers.is_empty() {
+                        continue;
+                    }
+                    if !dyndep_loaded.contains(&edge_idx) {
+                        dyndep_failure =
+                            Some(format!("error: loading '{path}': dyndep file is missing"));
+                        break;
+                    }
                 }
                 // Pool capacity check. Only real (non-phony) edges
                 // count against a pool — phonies don't spawn work.
@@ -573,6 +581,7 @@ fn schedule(
                     // can dispatch its dependents on this same loop turn.
                     started[slot] = true;
                     done[slot] = true;
+                    dyndep_producer_completed_inline |= pending_dyndep_producers.contains(&edge_idx);
                     for s2 in 0..plan.len() {
                         if deps[s2].contains(&slot) && !done[s2] {
                             remaining[s2] = remaining[s2].saturating_sub(1);
@@ -587,6 +596,7 @@ fn schedule(
                         dirty.insert(o.clone(), false);
                     }
                     done[slot] = true;
+                    dyndep_producer_completed_inline |= pending_dyndep_producers.contains(&edge_idx);
                     for s2 in 0..plan.len() {
                         if deps[s2].contains(&slot) && !done[s2] {
                             remaining[s2] = remaining[s2].saturating_sub(1);
@@ -685,6 +695,9 @@ fn schedule(
 
         if in_flight == 0 {
             let unstarted = started.iter().any(|s| !*s);
+            if unstarted && dyndep_producer_completed_inline {
+                continue;
+            }
             if unstarted && held_slots.iter().any(|s| s.is_some()) {
                 if let Some(c) = jobserver_client.as_mut() {
                     for held in &mut held_slots {

@@ -19,8 +19,11 @@ fixtures known to diverge, one per line with a one-line cause. The harness
 fails on any unlisted mismatch and on any listed fixture that now passes.
 The ledger is empty. Setup and build must exit zero on both sides unless
 the fixture declares the expected status in `setup-exit` or `build-exit`.
-Intentional failure fixtures cover a missing install script and a missing
-Ninja input.
+Intentional failure fixtures cover a missing install script, a missing
+Ninja input and an absent dyndep file after its producer completes.
+
+A Ninja fixture can name a target in `prepare-target`. Both engines build
+it before the default build so the fixture can exercise incremental state.
 
 Meson fixtures with `requires-pkg-config` are reported as skipped when
 their listed dependencies are unavailable. For a full run, provide zlib,
