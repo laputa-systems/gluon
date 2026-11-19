@@ -396,14 +396,6 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 
 
 
-### DSLP-12 · P2 · keep-going schedules dependents of failed Ninja edges
-
-- **Area:** Ninja scheduler
-- **Where:** crates/ninja/src/build/runner.rs:773
-- **Problem:** A rule writes partial to bad and exits 1. Declare consumed as a cp of bad and include a separate good target. With ninja -j2 -k 0, both engines exit 1 and create good. Gluon also writes partial to consumed. Ninja 1.13.2 leaves consumed absent.
-- **Recommendation:** Continue independent work while blocking transitive dependents of failed prerequisites. Test bounded and unlimited keep-going with a real graph.
-- **Fix with:** lifecycle-concurrency
-- **Effort:** M
 
 
 ### DSLP-13 · P2 · missing Ninja dependency records let stale outputs survive
