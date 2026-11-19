@@ -12,7 +12,10 @@ Muon is informational.
 The expected-fail ledger (`tests/differential/expected-fail`) lists
 fixtures known to diverge, one per line with a one-line cause. The harness
 fails on any unlisted mismatch and on any listed fixture that now passes.
-The ledger is empty.
+The ledger is empty. A Ninja fixture with an `expect-build-success` marker
+requires both builds to exit successfully before the harness compares their
+outputs. The `subninja` fixture uses the marker to require an object built
+with the child file's scoped rule.
 
 Gates, narrowest first:
 

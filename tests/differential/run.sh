@@ -285,6 +285,10 @@ run_compare_ninja() {
     return 1
   fi
   if [ "$ref_build_exit" != "0" ]; then
+    if [ -f "$src/expect-build-success" ]; then
+      printf 'FAIL %s expected a successful build (both exit %s)\n' "$id" "$ref_build_exit" >>"$TMPBASE/results.log"
+      return 1
+    fi
     printf 'PASS %s build-both-fail (both exit %s)\n' "$id" "$ref_build_exit" >>"$TMPBASE/results.log"
     return 0
   fi
