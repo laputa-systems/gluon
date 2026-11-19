@@ -284,7 +284,7 @@ fn schedule(
     let mut done = vec![false; plan.len()];
     let mut started = vec![false; plan.len()];
     let mut in_flight = 0usize;
-    let (tx, rx) = mpsc::channel::<EdgeOutcome>();
+    let (tx, rx) = mpsc::channel::<(EdgeOutcome, SystemTime)>();
     // We treat any non-zero exit as a "failure" and stop launching new
     // edges once `failure_count` reaches the user's `-k N` threshold.
     // The first failure code is preserved as the process exit status.
@@ -358,6 +358,7 @@ fn schedule(
     //      check (combined with each completed edge's
     //     dirty-output update) decides whether downstream work fires.
     let mut dirty: HashMap<String, bool> = HashMap::new();
+    let mut phony_mtimes = HashMap::new();
     for &edge_idx in plan.iter() {
         let edge = &edges[edge_idx];
         if edge.is_phony() && edge.inputs.is_empty() && edge.implicit_inputs.is_empty() {
@@ -440,15 +441,8 @@ fn schedule(
         }
     }
 
-    // Build-log-driven dirtiness. For every real edge:
-    //   - if no log entry exists for an output but the file does, treat
-    //     it as dirty (foreign artifact / first run after upgrade);
-    //   - if the recorded command hash differs from the freshly-computed
-    //     one the output is dirty (the rule changed);
-    //   - if the recorded mtime differs from what's on disk now the
-    //     output was modified outside ninja and must be regenerated.
-    // Missing files are already covered by the standard
-    // `edge_needs_run` check.
+    // Compare output times at dispatch, after the dyndep file has supplied
+    // any restat binding and additional inputs for the edge.
     for (slot, &edge_idx) in plan.iter().enumerate() {
         let edge = &edges[edge_idx];
         if edge.is_phony() {
@@ -456,20 +450,12 @@ fn schedule(
         }
         let new_hash = command_hashes[slot];
         for out in edge.outputs.iter().chain(&edge.implicit_outputs) {
-            let on_disk = mtime_of(out);
-            if on_disk.is_none() {
-                continue; // missing -> handled by edge_needs_run
-            }
-            match prev_log.entries.get(out) {
-                None => {
-                    dirty.insert(out.clone(), true);
-                }
-                Some(entry) => {
-                    let current_ns = log::mtime_to_ns(on_disk);
-                    if entry.command_hash != new_hash || entry.mtime_ns != current_ns {
-                        dirty.insert(out.clone(), true);
-                    }
-                }
+            if !prev_log
+                .entries
+                .get(out)
+                .is_some_and(|entry| entry.command_hash == new_hash)
+            {
+                dirty.insert(out.clone(), true);
             }
         }
     }
@@ -577,6 +563,18 @@ fn schedule(
                 }
                 let edge = edges[edge_idx].clone();
                 if edge.is_phony() {
+                    let newest_input = newest_input_mtime(&edge, &phony_mtimes);
+                    let input_dirty = edge
+                        .inputs
+                        .iter()
+                        .chain(&edge.implicit_inputs)
+                        .any(|input| dirty.get(input) == Some(&true));
+                    for output in edge.outputs.iter().chain(&edge.implicit_outputs) {
+                        phony_mtimes.insert(output.clone(), newest_input);
+                        if input_dirty {
+                            dirty.insert(output.clone(), true);
+                        }
+                    }
                     // Phony "completes" instantly; mark done inline so we
                     // can dispatch its dependents on this same loop turn.
                     started[slot] = true;
@@ -589,7 +587,8 @@ fn schedule(
                     }
                     continue;
                 }
-                let needs = edge_needs_run(&edge, &dirty);
+                let restat = rule_has_restat(state, &edge);
+                let needs = edge_needs_run(&edge, &dirty, &phony_mtimes, &prev_log, restat);
                 if !needs {
                     started[slot] = true;
                     for o in edge.outputs.iter().chain(&edge.implicit_outputs) {
@@ -634,7 +633,6 @@ fn schedule(
                 } else {
                     Vec::new()
                 };
-                let restat = rule_has_restat(state, &edge);
                 let mtimes_before: Vec<Option<SystemTime>> = if restat {
                     edge.outputs
                         .iter()
@@ -672,22 +670,24 @@ fn schedule(
                     // reap path handles bookkeeping (dirtiness,
                     // .ninja_log, deps_log, pool/jobserver release).
                     status.lock_console();
+                    let command_started = SystemTime::now();
                     let mut outcome = execute_console(slot, prepared);
                     outcome.explain = explain_owned;
                     outcome.restat = restat_flag;
                     outcome.outputs_for_restat = prepared_outputs;
                     outcome.mtimes_before = prepared_mtimes;
                     outcome.command_hash = cmd_hash;
-                    let _ = tx.send(outcome);
+                    let _ = tx.send((outcome, command_started));
                 } else {
                     thread::spawn(move || {
+                        let command_started = SystemTime::now();
                         let mut outcome = execute(slot, prepared);
                         outcome.explain = explain_owned;
                         outcome.restat = restat_flag;
                         outcome.outputs_for_restat = prepared_outputs;
                         outcome.mtimes_before = prepared_mtimes;
                         outcome.command_hash = cmd_hash;
-                        let _ = tx.send(outcome);
+                        let _ = tx.send((outcome, command_started));
                     });
                 }
             }
@@ -730,8 +730,8 @@ fn schedule(
         // simultaneously. Edges that finish in a different batch
         // i.e. distinct rx.recv() blocks still appear in completion
         // order, preserving the interleaving asserted by test_issue_1418.
-        batch.sort_by_key(|o| o.slot);
-        for outcome in batch {
+        batch.sort_by_key(|(outcome, _)| outcome.slot);
+        for (outcome, command_started) in batch {
             in_flight -= 1;
             let slot = outcome.slot;
             done[slot] = true;
@@ -793,18 +793,24 @@ fn schedule(
                     } else {
                         status.build_finished(&outcome.shown, &combined);
                     }
-                    // Persist the latest command hash + observed output
-                    // mtimes so the next ninja invocation can detect
-                    // command changes and outside-of-ninja edits.
-                    let now_ms = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or(0);
-                    for out in &outcome.outputs_for_restat {
+                    let started_ns = log::mtime_to_ns(Some(command_started));
+                    let finished_ns = log::mtime_to_ns(Some(SystemTime::now()));
+                    for (index, out) in outcome.outputs_for_restat.iter().enumerate() {
+                        let observed = mtime_of(out);
+                        let observed_ns = log::mtime_to_ns(observed);
+                        let recorded_ns = if outcome.restat {
+                            if outcome.mtimes_before.get(index) == Some(&observed) {
+                                started_ns
+                            } else {
+                                started_ns.max(observed_ns)
+                            }
+                        } else {
+                            observed_ns
+                        };
                         let entry = log::LogEntry {
-                            start_ms: now_ms,
-                            end_ms: now_ms,
-                            mtime_ns: log::mtime_to_ns(mtime_of(out)),
+                            start_ms: (started_ns / 1_000_000) as u64,
+                            end_ms: (finished_ns / 1_000_000) as u64,
+                            mtime_ns: recorded_ns,
                             command_hash: outcome.command_hash,
                         };
                         log_writer.record(std::slice::from_ref(out), &entry);
@@ -893,21 +899,60 @@ fn schedule(
 /// needs to run if any of its outputs is missing on disk, any of its
 /// outputs has been flagged dirty, or any of its inputs is currently
 /// flagged dirty.
-fn edge_needs_run(edge: &Edge, dirty: &HashMap<String, bool>) -> bool {
-    for o in edge.outputs.iter().chain(&edge.implicit_outputs) {
-        if !std::path::Path::new(o).exists() {
-            return true;
-        }
-        if *dirty.get(o.as_str()).unwrap_or(&false) {
-            return true;
-        }
+fn edge_needs_run(
+    edge: &Edge,
+    dirty: &HashMap<String, bool>,
+    phony_mtimes: &HashMap<String, Option<SystemTime>>,
+    previous_log: &log::BuildLog,
+    restat: bool,
+) -> bool {
+    if edge
+        .inputs
+        .iter()
+        .chain(&edge.implicit_inputs)
+        .any(|input| dirty.get(input) == Some(&true))
+    {
+        return true;
     }
-    for i in edge.inputs.iter().chain(&edge.implicit_inputs) {
-        if *dirty.get(i.as_str()).unwrap_or(&false) {
+    let mut newest_input = None;
+    for o in edge.outputs.iter().chain(&edge.implicit_outputs) {
+        if dirty.get(o) == Some(&true) {
+            return true;
+        }
+        let Some(observed) = mtime_of(o) else {
+            return true;
+        };
+        let observed_ns = log::mtime_to_ns(Some(observed));
+        let entry = previous_log.entries.get(o);
+        if !restat && entry.is_some_and(|entry| entry.mtime_ns != observed_ns) {
+            return true;
+        }
+        let output_mtime = if restat {
+            entry.map_or(observed_ns, |entry| entry.mtime_ns)
+        } else {
+            observed_ns
+        };
+        let input_mtime = *newest_input
+            .get_or_insert_with(|| log::mtime_to_ns(newest_input_mtime(edge, phony_mtimes)));
+        if output_mtime < input_mtime {
             return true;
         }
     }
     false
+}
+
+fn newest_input_mtime(
+    edge: &Edge,
+    phony_mtimes: &HashMap<String, Option<SystemTime>>,
+) -> Option<SystemTime> {
+    edge.inputs
+        .iter()
+        .chain(&edge.implicit_inputs)
+        .filter_map(|input| match phony_mtimes.get(input) {
+            Some(mtime) => *mtime,
+            None => mtime_of(input),
+        })
+        .max()
 }
 
 fn rule_has_restat(state: &State, edge: &Edge) -> bool {
