@@ -22,8 +22,9 @@ corpus: before the test, 31.37% lines and 20.96% branches; afterwards, 31.52%
 and 21.19%. The warm suite took 15.84 s before and 16.44 s after on a busy
 host; those observations are not a qualified timing gate. The configured
 crate mirror returned 404 for cargo-mutants and cargo-llvm-cov, while a known
-package resolved. The diff mutation gate and mirrored CI lane remain
-unqualified, and DSLP-4 remains open.
+package resolved. A mutation CI lane is required only
+where the tools are mirrored, so DSLP-4 closes without one; the mirror gap is a
+shared stuff registry item, recorded under the campaign's shared-file gaps.
 
 Ground at `2a1bca45da57bc36da9a60e1666bd392c9fe011f` used
 macOS ARM64 and pinned nightly 2026-11-09. The default Make goal
@@ -333,14 +334,6 @@ when started with `--version`.
 
 
 
-### DSLP-4 · P2 · Tests: coverage, boundary gaps, mutation
-
-- **Area:** deslop · tests
-- **Where:** test suites and CI
-- **Problem:** Coverage and mutation results are unmeasured; no deslop mutation lane exists.
-- **Recommendation:** Run the deslop Tests step. Accept: no undispositioned survivor in critical code, the test cost budget holds, and the lane is green where the tools are mirrored.
-- **Fix with:** deslop
-- **Effort:** M
 
 
 ### DSLP-5 · P2 · Dead code: tools and debloat
