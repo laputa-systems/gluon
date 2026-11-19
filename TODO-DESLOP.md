@@ -40,6 +40,15 @@ from the parent, both Wayland fixtures lacked dependencies, and
 `llvm-config-tool` failed at link time. The full hosted parity gate and
 remaining Diagnose review stay open.
 
+The corrected `subninja` and `llvm-config-tool` fixtures both built with
+the installed candidate and pinned upstream tools. The fixture harness
+rejected matching failures when the parent used an undefined rule or
+the macOS linker received the old `--defsym` flags. Both LLVM products
+exported the required module, static link, and system-library markers.
+In the full repeat, four fixtures still shared failures. Two required
+unavailable Wayland dependencies, and the other two were the intentional
+missing install script and missing Ninja dependency cases.
+
 ## Tickets
 
 

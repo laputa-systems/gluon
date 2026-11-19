@@ -117,6 +117,10 @@ run_compare_meson() {
     return 1
   fi
   if [ "$ref_setup" != "0" ]; then
+    if [ -f "$src/expect-build-success" ]; then
+      printf 'FAIL %s expected a successful setup (both exit %s)\n' "$id" "$ref_setup" >>"$TMPBASE/results.log"
+      return 1
+    fi
     printf 'PASS %s setup-both-fail (both exit %s)\n' "$id" "$ref_setup" >>"$TMPBASE/results.log"
     return 0
   fi
@@ -133,6 +137,10 @@ run_compare_meson() {
     return 1
   fi
   if [ "$ref_build_exit" != "0" ]; then
+    if [ -f "$src/expect-build-success" ]; then
+      printf 'FAIL %s expected a successful build (both exit %s)\n' "$id" "$ref_build_exit" >>"$TMPBASE/results.log"
+      return 1
+    fi
     printf 'PASS %s build-both-fail (both exit %s)\n' "$id" "$ref_build_exit" >>"$TMPBASE/results.log"
     return 0
   fi
