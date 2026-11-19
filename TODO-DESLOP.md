@@ -1,5 +1,5 @@
 Prefix: DSLP
-Next: 12
+Next: 21
 
 Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/main/docs/campaigns/deslop.md), tier B). One agent works this file with the `deslop` skill: take the lowest-numbered open ticket whose area does not start with `Needs owner ·`. After DSLP-5, work the open P1 and P2 findings, then fill in `## Report` below.
 
@@ -214,6 +214,28 @@ installed version and notes matched the fixture bytes. This covers
 the downstream command and artifact checks. Laputa's package manager
 and dynamic-loader checks were outside that fixture run.
 
+The Diagnose review at `32f2ef4` covered Ninja dispatch and state,
+Meson setup, generated commands, installation and introspection, and
+the public entry points. The macOS dist suite passed 93 top-level tests
+and one filtered child case. Clippy and the documentation check passed.
+The review kept three existing boundaries visible: declared cycle
+detection, command success before build-log recording, and a shared
+install plan for execution and introspection.
+
+The pinned Ninja comparison reproduced dependent dispatch after a
+failed edge and a stale executable after dependency-log loss. The
+failed-generator control left a newer output idle on both engines,
+so it did not establish a parity defect. The pinned Meson comparison
+reproduced setup errors accepted as success, lost machine-file options
+and generated content replaced by raw input. The integrated CLI failed
+to install a static library that the standalone CLI installed.
+
+An isolated copy of the benchmark harness returned zero and printed
+`benchmarks: PASS` when all 14 timed build tool invocations returned
+seven. The review filed the failure as DSLP-11 and the runtime findings
+as DSLP-12 through DSLP-20. It did not qualify the full build and
+installation matrix or pursue owner-dependent work outside Gluon.
+
 ## Tickets
 
 
@@ -222,14 +244,6 @@ and dynamic-loader checks were outside that fixture run.
 
 
 
-### DSLP-2 · P2 · Diagnose: ultrareview into this backlog
-
-- **Area:** deslop · diagnose
-- **Where:** whole repository
-- **Problem:** No review has ranked this repository's risks for the deslop pass.
-- **Recommendation:** Run the deslop Diagnose step. Accept: the diff touches only docs, comments, and this file, and every finding names its Fix with.
-- **Fix with:** deslop
-- **Effort:** S
 
 
 ### DSLP-3 · P2 · Types: strict profile and typing findings
@@ -269,3 +283,91 @@ and dynamic-loader checks were outside that fixture run.
 - **Recommendation:** Make the CLI gate fail on workload errors and verify output or log witnesses before comparing paired dist timings. Include a known-failure control for the final status and check host readiness after timing. Keep the existing setup, reconfigure, no-op and incremental workloads.
 - **Fix with:** refactor-benchmarks
 - **Effort:** M
+
+### DSLP-12 · P2 · keep-going schedules dependents of failed Ninja edges
+
+- **Area:** Ninja scheduler
+- **Where:** crates/ninja/src/build/runner.rs:773
+- **Problem:** A rule writes partial to bad and exits 1. Declare consumed as a cp of bad and include a separate good target. With ninja -j2 -k 0, both engines exit 1 and create good. Gluon also writes partial to consumed. Ninja 1.13.2 leaves consumed absent.
+- **Recommendation:** Continue independent work while blocking transitive dependents of failed prerequisites. Test bounded and unlimited keep-going with a real graph.
+- **Fix with:** lifecycle-concurrency
+- **Effort:** M
+
+
+### DSLP-13 · P2 · missing Ninja dependency records let stale outputs survive
+
+- **Area:** Ninja dependency state
+- **Where:** crates/ninja/src/build/runner.rs:1012, crates/state/src/deps_log.rs:76
+- **Problem:** Build a program that returns a header value with cc -MMD -MF app.d, depfile = app.d and deps = gcc. After a warm no-op, remove .ninja_deps and change the header from zero to seven. Gluon reports no work and the executable still returns zero. Ninja 1.13.2 recompiles and the executable returns seven.
+- **Recommendation:** Invalidate missing or rejected required dependency records. Verify persistence failures before deleting the depfile.
+- **Fix with:** durable-state
+- **Effort:** M
+
+
+### DSLP-14 · P2 · Meson configure_file accepts missing inputs and failed commands
+
+- **Area:** Meson configuration effects
+- **Where:** crates/meson/src/builtins/functions.rs:2534,2544,2653
+- **Problem:** Gluon setup exits zero when configure_file with configuration data and input missing.in writes an empty file, and when configure_file with a command that exits seven leaves its declared output absent. Meson 1.12.1 rejects both setups with the source location and reason.
+- **Recommendation:** Propagate read, write, spawn and unsuccessful command results through setup. Verify expected bytes for successful inputs.
+- **Fix with:** error-model
+- **Effort:** M
+
+
+### DSLP-15 · P2 · Meson configure drops machine-file options
+
+- **Area:** Meson reconfiguration state
+- **Where:** crates/meson/src/cli.rs:981,1059
+- **Problem:** Set c_args = ['-DMACHINE_VALUE=7'] in a cross file's built-in options and compile a program returning MACHINE_VALUE. After meson configure -Dbuildtype=debug build, Gluon drops the flag and Ninja cannot compile. Meson 1.12.1 preserves it and the executable returns seven.
+- **Recommendation:** Retain machine-file paths and setup semantics across configuration. Verify native and cross files and an existing build directory.
+- **Fix with:** durable-state
+- **Effort:** M
+
+
+### DSLP-19 · P2 · integrated Meson emits invalid self-invocations
+
+- **Area:** Meson embedded CLI
+- **Where:** crates/meson/src/cli.rs:942, crates/meson/src/backend.rs:275,930, bins/build/src/main.rs:17
+- **Problem:** Configure a C project with static_library('value', 'value.c', install: true) through gluon-build meson setup. Ninja install fails at gluon-build --internal static-link, whose argv lacks the meson subcommand. The install rule omits it too. Standalone meson installs libvalue.a from the same project.
+- **Recommendation:** Carry the selected Meson invocation through generated rules, including the embedded subcommand. Verify both standalone and integrated setup and install.
+- **Fix with:** reference-parity
+- **Effort:** M
+
+
+### DSLP-20 · P2 · Ninja overwrites configure_file command output with raw input
+
+- **Area:** Meson generated rules
+- **Where:** crates/meson/src/backend.rs:857
+- **Problem:** Use configure_file with input data.in, a captured command that uppercases it, and a default custom target that copies the generated file. Both setup commands produce FIRST. The first Ninja build writes first under Gluon and FIRST under Meson 1.12.1. After changing the input to second, the candidate copies second and the reference produces SECOND.
+- **Recommendation:** Regenerate through the declared command or reconfiguration. Verify generated and downstream bytes before and after editing an input.
+- **Fix with:** reference-parity
+- **Effort:** M
+
+
+### DSLP-16 · P3 · Ninja depfile parsing corrupts UTF-8 and escaped hashes
+
+- **Area:** Ninja dependency paths
+- **Where:** crates/state/src/depfile.rs:63,84
+- **Problem:** Compile with cc -MMD and deps = gcc while including café.h or name#part.h. Both Gluon builds recompile on a warm invocation. Ninja 1.13.2 stays idle and recompiles after an actual edit. The parser converts UTF-8 a byte at a time and treats the escaped hash as a comment.
+- **Recommendation:** Preserve path bytes and consume Make depfile escapes before interpreting comments. Check a warm no-op and a header edit.
+- **Fix with:** reference-parity
+- **Effort:** M
+
+### DSLP-17 · P3 · Meson target introspection omits custom targets
+
+- **Area:** Meson introspection
+- **Where:** crates/meson/src/backend.rs:92,1741
+- **Problem:** Declare custom_target('copy', output: 'data.out', command: [find_program('touch'), '@OUTPUT@']). Reference Meson includes copy in intro-targets.json. Gluon emits the Ninja target and returns an empty target array.
+- **Recommendation:** Generate entries for supported custom targets using the owning build data. Compare ID, outputs and type to pinned Meson.
+- **Fix with:** reference-parity
+- **Effort:** M
+
+
+### DSLP-18 · P3 · Meson setup silently accepts malformed option files
+
+- **Area:** Meson option parsing
+- **Where:** crates/meson/src/options.rs:392, crates/meson/src/builtins/functions.rs:427
+- **Problem:** Use project('m') in meson.build and an unterminated option( in meson.options. Gluon setup exits zero. Meson 1.12.1 exits one and reports the unexpected end at meson.options:1:8.
+- **Recommendation:** Surface read and syntax failures with file and position. Preserve optional and valid option files.
+- **Fix with:** error-model
+- **Effort:** S
