@@ -24,9 +24,6 @@ gh release download "$tag" --repo laputa-systems/gluon --pattern 'SHA256SUMS'
 grep -F 'gluon-aarch64-apple-darwin.tar.xz' SHA256SUMS | shasum -a 256 -c -
 ```
 
-Consumer installers: the `~/usr` repository installs gluon through its tools
-sync, and `~/d/view` through its toolchain target. Building from source is `cargo build --profile dist --locked`.
-
 ## Run
 
 ```sh

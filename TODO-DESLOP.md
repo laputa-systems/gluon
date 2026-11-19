@@ -1,5 +1,5 @@
 Prefix: DSLP
-Next: 11
+Next: 12
 
 Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/main/docs/campaigns/deslop.md), tier B). One agent works this file with the `deslop` skill: take the lowest-numbered open ticket whose area does not start with `Needs owner ·`. After DSLP-5, work the open P1 and P2 findings, then fill in `## Report` below.
 
@@ -259,4 +259,13 @@ and dynamic-loader checks were outside that fixture run.
 - **Problem:** No dead-code scan has run.
 - **Recommendation:** Run the deslop Dead code step. Accept: tools clean or allowlisted with reasons; walk-backs filed as Needs owner tickets.
 - **Fix with:** deslop
+- **Effort:** M
+
+### DSLP-11 · P2 · benchmark gate passes when its build commands fail
+
+- **Area:** benchmark acceptance
+- **Where:** tests/benchmarks/run.sh:57–79
+- **Problem:** The benchmark script continues after failed setup and incremental commands, masks failed dry runs with || true, and prints benchmarks: PASS without checking artifact or command-count parity. In an isolated copy, all 14 timed Meson and Ninja invocations exited 7 and the script exited zero with PASS.
+- **Recommendation:** Make the CLI gate fail on workload errors and verify output or log witnesses before comparing paired dist timings. Include a known-failure control for the final status and check host readiness after timing. Keep the existing setup, reconfigure, no-op and incremental workloads.
+- **Fix with:** refactor-benchmarks
 - **Effort:** M

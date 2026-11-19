@@ -49,20 +49,21 @@ Gates, narrowest first:
   installed with reference Meson and with gluon; installed trees and
   RPATH/RUNPATH must match, without rpath, with `install_rpath` and with a
   build-only `build_rpath`.
-- `tests/upstream/musl.sh` — static-musl bins via Docker (pinned
-  `rust:nightly-2026-09-15`, `--platform linux/amd64`, `x86_64-unknown-linux-musl`) that
-  run `--version` in the container. Release CI builds both Linux targets in the
-  shared musl toolchain image and checks the binaries with its static ELF
-  verifier (see [decisions.md](decisions.md)).
-- `tests/benchmarks/run.sh` — cold Meson setup, reconfigure, Ninja `-n` at
-  1K/10K/100K edges, and a one-file incremental rebuild. The script prints
-  each run. Rustybench harnesses in `crates/*/benches` time parse and plan
-  and count allocations. Time-based gates run only when `perf-gate-ready`
-  exits 0, and again with `-1` immediately after. A deferred gate is not a
-  pass.
+- Use the [release workflow](../.github/workflows/release.yml) build command
+  to verify static Linux musl artifacts on either architecture.
+  `tests/upstream/musl.sh` checks only x86-64 binary invocation.
+- Rustybench harnesses in `crates/*/benches` measure parse and plan work.
+  The shell benchmark attempts setup and Ninja runs, but it skips
+  equivalent-work checks. Use paired workloads with failing commands
+  surfaced and outputs verified. Run `perf-gate-ready` before timing and
+  `perf-gate-ready -1` immediately after.
 
-Qualification (`~/d/play`, read-only): drive libplacebo 7.387.0 with the
-Metal patch and SPIRV-Cross vulkan-sdk 1.4.363.0 through gluon `meson` +
-`ninja` per the Meson invocations in play's dependency build script, then link
-play's player crates against the outputs with `CARGO_TARGET_DIR` under this
-repo's `.work/tmp`.
+## Consumer checks
+
+- FFmpeg-build's `build_dav1d` builds and installs the locked archive through
+  Meson and Ninja. Verify the installed library with a linked decoder check.
+- Laputa's `packages/gluon/proof.xsh` covers shell-free setup, build and
+  installation.
+- Build Play's pinned libplacebo and SPIRV-Cross against the candidate tools
+  in an isolated checkout, then link the player crates against the dependency
+  prefix. [Play's dependency build](https://github.com/joshuarli/play/blob/bae10f91b7003e208964eab030ba024d9b6c1a49/scripts/build-deps.sh)
