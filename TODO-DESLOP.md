@@ -119,6 +119,21 @@ output. The macOS corpus passed 56 fixtures with two Wayland skips.
 Stable Alpine passed all 58 with zero skips. Both counts include three
 intentional failures.
 
+The incremental CLI regression updates an explicit source, an implicit
+source and a source reached through a phony edge. Those outputs now
+refresh. An order-only consumer keeps its original bytes. The restat
+rule runs once for a newer input and keeps its downstream output quiet.
+Pinned Ninja and the candidate passed the regression. The previous
+release kept the old bytes for the explicit input.
+
+The build log retains its v6 layout. Restat records can use command
+start as their timestamp when output mtime alone would cause repeated
+rebuilds. An actual log from `release-fa8b6aa` survived a failed
+command byte for byte. The next successful invocation rebuilt once,
+and the following invocation was idle. The macOS corpus passed 56
+fixtures with two Wayland skips. The Alpine corpus passed all 58.
+The incremental test also passed in the pinned ARM64 musl toolchain.
+
 ## Tickets
 
 
@@ -132,14 +147,6 @@ intentional failures.
 - **Fix with:** reference-parity
 - **Effort:** L
 
-### DSLP-8 · P1 · Ninja ignores newer declared inputs on incremental builds
-
-- **Area:** Ninja planning
-- **Where:** crates/ninja/src/build/runner.rs, tests/differential/fixtures/ninja
-- **Problem:** Use a rule with command = cp $in $out and build output: copy input. Build with input containing first, then write second and set input to a newer mtime. Pinned Ninja 1.13.2 rebuilds output to second. Gluon release-fa8b6aa and the declared-input fix report no work and leave first with exit zero.
-- **Recommendation:** Compare ordinary input freshness against outputs and recorded build state. Verify explicit and implicit inputs rebuild when newer, order-only inputs preserve ordering without forcing rebuild, and restat and phony edges preserve upstream behavior.
-- **Fix with:** reference-parity
-- **Effort:** M
 
 
 
