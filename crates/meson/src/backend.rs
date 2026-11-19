@@ -94,10 +94,7 @@ impl NinjaBackend {
             self.write_custom_target(&mut out, ct)?;
         }
 
-        // Configure files
-        for cf in &build_data.configure_files {
-            self.write_configure_file(&mut out, cf)?;
-        }
+        self.write_configure_file_regeneration(&mut out, build_data);
 
         // Aliases
         self.write_aliases(&mut out, build_data)?;
@@ -304,8 +301,10 @@ impl NinjaBackend {
         writeln!(out, "rule REGENERATE_BUILD").unwrap();
         writeln!(
             out,
-            "  command = meson setup --reconfigure {} {}",
-            self.source_root, self.build_root
+            "  command = {} setup --reconfigure {} {}",
+            quote_argument(&self.meson_command).replace('$', "$$"),
+            quote_argument(&self.build_root).replace('$', "$$"),
+            quote_argument(&self.source_root).replace('$', "$$")
         )
         .unwrap();
         writeln!(out, "  description = Regenerating build files.").unwrap();
@@ -854,35 +853,32 @@ impl NinjaBackend {
         order_only
     }
 
-    fn write_configure_file(&self, out: &mut String, cf: &ConfigureFile) -> Result<(), String> {
-        let target_dir = if cf.subdir.is_empty() {
-            String::new()
-        } else {
-            format!("{}/", cf.subdir)
-        };
-        // Generation at configure time: when command is empty (configuration or
-        // copy mode), the output already exists in the build dir from setup;
-        // emitting a cp edge would clobber substituted values with the template.
-        if cf.command.is_empty() {
-            return Ok(());
+    fn write_configure_file_regeneration(&self, out: &mut String, build_data: &BuildData) {
+        let mut inputs = Vec::new();
+        for cf in &build_data.configure_files {
+            if cf.command.is_empty() {
+                continue;
+            }
+            if let Some(input) = &cf.input {
+                let path = if Path::new(input).is_absolute() {
+                    input.clone()
+                } else if cf.subdir.is_empty() {
+                    format!("{}/{}", self.source_root, input)
+                } else {
+                    format!("{}/{}/{}", self.source_root, cf.subdir, input)
+                };
+                if !inputs.contains(&path) {
+                    inputs.push(path);
+                }
+            }
         }
-        let output_path = format!("{}{}", target_dir, cf.output);
-
-        // Configuration file generation is done at configure time, not build time.
-        // We generate a build edge that copies/generates the file.
-        if let Some(ref input) = cf.input {
-            let input_path = if cf.subdir.is_empty() {
-                format!("{}/{}", self.source_root, input)
-            } else {
-                format!("{}/{}/{}", self.source_root, cf.subdir, input)
-            };
-            writeln!(out, "build {}: CUSTOM_COMMAND {}", output_path, input_path).unwrap();
-            writeln!(out, "  COMMAND = cp {} {}", input_path, output_path).unwrap();
-            writeln!(out, "  DESC = Generating {}", cf.output).unwrap();
+        if !inputs.is_empty() {
+            let inputs = inputs.iter().map(|path| {
+                path.replace('$', "$$").replace(' ', "$ ").replace(':', "$:")
+            }).collect::<Vec<_>>().join(" ");
+            writeln!(out, "build build.ninja: REGENERATE_BUILD {}", inputs).unwrap();
             writeln!(out).unwrap();
         }
-
-        Ok(())
     }
 
     fn write_aliases(&self, out: &mut String, build_data: &BuildData) -> Result<(), String> {

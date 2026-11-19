@@ -12,6 +12,7 @@ fn setup(source: &str) -> (std::process::Output, PathBuf) {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("input.in"), "value=@VALUE@\n").unwrap();
+    std::fs::write(dir.join("data.in"), "first").unwrap();
     std::fs::write(dir.join("meson.build"), format!("project('test')\n{source}\n")).unwrap();
     let output = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "setup_child", "--nocapture"])
@@ -72,4 +73,39 @@ fn successful_input_and_capture_preserve_bytes() {
 #[test]
 fn missing_command_fails_setup() {
     reject("configure_file(output: 'out', command: ['/no/such/gluon-command'])", &["/no/such/gluon-command"]);
+}
+
+#[test]
+fn captured_command_input_regenerates_before_default_target() {
+    let (output, dir) = setup("configured = configure_file(input: 'data.in', output: 'configured', command: ['sh', '-c', 'tr a-z A-Z < \"$1\"', 'sh', '@INPUT@'], capture: true)\ncustom_target('copy', input: configured, output: 'copied', command: ['cp', '@INPUT@', '@OUTPUT@'], build_by_default: true)");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    // The test executable hosts the candidate CLI. A wrapper lets Ninja invoke it
+    // for regeneration in the same way it invokes the standalone Meson binary.
+    let wrapper = dir.join("candidate-meson");
+    std::fs::write(&wrapper, format!("#!/bin/sh\nexec '{}' --exact setup_child --nocapture\n", std::env::current_exe().unwrap().display())).unwrap();
+    let status = Command::new("chmod").args(["+x", wrapper.to_str().unwrap()]).status().unwrap();
+    assert!(status.success());
+    let build_file = dir.join("build/build.ninja");
+    let manifest = std::fs::read_to_string(&build_file).unwrap();
+    std::fs::write(&build_file, manifest.replace(&std::env::current_exe().unwrap().to_string_lossy().to_string(), &wrapper.to_string_lossy())).unwrap();
+
+    let reference = dir.join("reference");
+    let output = Command::new("meson").args(["setup", reference.to_str().unwrap(), dir.to_str().unwrap()]).output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    for build in [reference.clone(), dir.join("build")] {
+        assert_eq!(std::fs::read(build.join("configured")).unwrap(), b"FIRST");
+    }
+    for (input, expected) in [("first", b"FIRST".as_slice()), ("second", b"SECOND".as_slice())] {
+        if input == "second" {
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+            std::fs::write(dir.join("data.in"), input).unwrap();
+        }
+        for build in [reference.clone(), dir.join("build")] {
+            let output = Command::new("ninja").arg("-C").arg(&build).env("GLUON_TEST_SOURCE", &dir).output().unwrap();
+            assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            assert_eq!(std::fs::read(build.join("configured")).unwrap(), expected, "{} configured", build.display());
+            assert_eq!(std::fs::read(build.join("copied")).unwrap(), expected, "{} copied", build.display());
+        }
+    }
+    std::fs::remove_dir_all(dir).unwrap();
 }
