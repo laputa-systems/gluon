@@ -1,5 +1,5 @@
 Prefix: DSLP
-Next: 7
+Next: 10
 
 Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/main/docs/campaigns/deslop.md), tier B). One agent works this file with the `deslop` skill: take the lowest-numbered open ticket whose area does not start with `Needs owner ·`. After DSLP-5, work the open P1 and P2 findings, then fill in `## Report` below.
 
@@ -93,17 +93,54 @@ intentional failure cases, and skipped the two optional Wayland cases.
 A changed wheel checksum stopped the runner before installation. The
 hosted workflow pins Python 3.14.10 and rejects any other skipped fixture.
 
+Declared-input validation now runs before dry runs or command dispatch.
+Pinned Ninja and the candidate rejected four kinds of missing input in
+normal and dry runs, and both still built an unrelated selected target.
+Deleting a header listed in a stale depfile still triggered its rebuild.
+The differential fixture for a dyndep-generated input verifies the
+producer and consumer outputs. Meson now declares the force target its
+install rule uses. Reconfiguring a build tree from `release-fa8b6aa`
+restored its install with the original setup options.
+
+The macOS corpus passed 54 fixtures and skipped the two Wayland cases.
+Both rebuilt static ARM64 binaries passed ELF verification under the
+pinned musl toolchain. Alpine 3.24.2 ran all 56 fixtures with zero skips
+including the two intentional failures. The time-based performance
+gate is deferred because `perf-gate-ready` reported a hot OrbStack
+process tree. DSLP-7 through DSLP-9 retain the separate incremental
+and generated-metadata failures reproduced on the prior release.
+
 ## Tickets
 
 
-### DSLP-6 · P1 · Ninja can build successfully without a declared input
+
+### DSLP-7 · P1 · Ninja can build from stale generated dyndep metadata
 
 - **Area:** Ninja planning
-- **Where:** crates/ninja/src/build/plan.rs, crates/ninja/src/build/runner.rs, tests/differential/fixtures/ninja/missing-dep
-- **Problem:** In a scratch build.ninja, define rule touch with an indented command = touch $out and add build out: touch missing.in. Leave missing.in absent. Pinned Ninja 1.13.2 exits 1 in normal and dry runs. Gluon exits 0 in both and creates out in the real build. The existing compiler fixture masks the gap because cc catches the missing input.
-- **Recommendation:** Reject missing manifest inputs before dispatch and preserve generated inputs and stale depfiles. Test a clean graph where deps.dd adds extra as an implicit output of a, a second edge declares extra as its implicit input, and a and the second output are both defaults. Both engines build that graph, so checking unresolved leaves before dyndep loads would regress it.
+- **Where:** crates/ninja/src/build/runner.rs, crates/ninja/src/build/dyndep.rs
+- **Problem:** Build deps.dd from first.dd with cp. The metadata declares extra as an implicit output of a, and out consumes extra. Bind both edges to deps.dd and default a and out. Prime only deps.dd, then change the command to copy new.dd, which no longer declares extra. Pinned Ninja 1.13.2 exits 1 before dispatch. Gluon release-fa8b6aa and the declared-input fix regenerate deps.dd byte for byte from new.dd but still use the old producer and create out with exit zero. Changing a source file can also leave the old graph in effect.
+- **Recommendation:** Check the producing edge before loading generated dyndep metadata and use ready output from the current generation. Verify both command and input changes in normal and dry builds, including a metadata input whose own producer needs work.
+- **Fix with:** reference-parity
+- **Effort:** L
+
+### DSLP-8 · P1 · Ninja ignores newer declared inputs on incremental builds
+
+- **Area:** Ninja planning
+- **Where:** crates/ninja/src/build/runner.rs, tests/differential/fixtures/ninja
+- **Problem:** Use a rule with command = cp $in $out and build output: copy input. Build with input containing first, then write second and set input to a newer mtime. Pinned Ninja 1.13.2 rebuilds output to second. Gluon release-fa8b6aa and the declared-input fix report no work and leave first with exit zero.
+- **Recommendation:** Compare ordinary input freshness against outputs and recorded build state. Verify explicit and implicit inputs rebuild when newer, order-only inputs preserve ordering without forcing rebuild, and restat and phony edges preserve upstream behavior.
 - **Fix with:** reference-parity
 - **Effort:** M
+
+### DSLP-9 · P1 · Ninja can finish early after skipping a clean dyndep producer
+
+- **Area:** Ninja scheduling
+- **Where:** crates/ninja/src/build/runner.rs
+- **Problem:** Use a cp rule to generate deps.dd from a file declaring extra as an implicit output of a. Bind the a and out edges to deps.dd, have out declare extra as an implicit input, and default a and out. Build only deps.dd and then run the defaults. Upstream Ninja 1.13.2 produces a, extra and out. Gluon release-fa8b6aa and the declared-input fix exit zero without creating any of them. Skipping the clean metadata producer clears ordinary dependencies but leaves the in-loop pending metadata set stale, and the scheduler exits without another dispatch pass.
+- **Recommendation:** Make queue readiness observe a clean metadata producer completing in the same scheduler pass. Verify files and exit code when a clean producer has both direct and independent downstream edges.
+- **Fix with:** reference-parity
+- **Effort:** M
+
 
 ### DSLP-2 · P2 · Diagnose: ultrareview into this backlog
 
@@ -114,6 +151,7 @@ hosted workflow pins Python 3.14.10 and rejects any other skipped fixture.
 - **Fix with:** deslop
 - **Effort:** S
 
+
 ### DSLP-3 · P2 · Types: strict profile and typing findings
 
 - **Area:** deslop · types
@@ -122,6 +160,7 @@ hosted workflow pins Python 3.14.10 and rejects any other skipped fixture.
 - **Recommendation:** Run the deslop Types step. Accept: clean at the adopted profile, escape hatches not increased, witnesses recorded.
 - **Fix with:** deslop
 - **Effort:** M
+
 
 ### DSLP-4 · P2 · Tests: coverage, boundary gaps, mutation
 
