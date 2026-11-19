@@ -194,20 +194,20 @@ run_compare_meson() {
     bn=$(sed -n "${i}p" "$work/final_base.txt")
     ref_path=$(cd "$ref_build" && find . -type f -name "$bn" | head -1)
     cand_path=$(cd "$cand_build" && find . -type f -name "$bn" | head -1)
-    nm_flags=
-    case $(file "$ref_build/$ref_path" 2>/dev/null) in
-      *Mach-O*) nm_flags=-gU ;;
-      *ELF*|*'current ar archive'*) nm_flags='-g --defined-only' ;;
+    case $(file -b "$ref_build/$ref_path" 2>/dev/null) in
+      *Mach-O*|*ELF*|*'current ar archive'*)
+        if ! defined_symbols "$ref_build/$ref_path" >"$work/nm_ref.txt" 2>>"$work/nm_errors.log" ||
+           ! defined_symbols "$cand_build/$cand_path" >"$work/nm_cand.txt" 2>>"$work/nm_errors.log"; then
+          printf 'FAIL %s could not read symbols for %s\n' "$id" "$bn" >>"$TMPBASE/results.log"
+          return 1
+        fi
+        if ! diff -q "$work/nm_ref.txt" "$work/nm_cand.txt" >/dev/null 2>&1; then
+          printf 'FAIL %s symbols mismatch for %s\n' "$id" "$bn" >>"$TMPBASE/results.log"
+          diff "$work/nm_ref.txt" "$work/nm_cand.txt" >>"$TMPBASE/results.log" || true
+          return 1
+        fi
+        ;;
     esac
-    if [ -n "$nm_flags" ]; then
-      defined_symbols "$ref_build/$ref_path" >"$work/nm_ref.txt" || true
-      defined_symbols "$cand_build/$cand_path" >"$work/nm_cand.txt" || true
-      if ! diff -q "$work/nm_ref.txt" "$work/nm_cand.txt" >/dev/null 2>&1; then
-        printf 'FAIL %s symbols mismatch for %s\n' "$id" "$bn" >>"$TMPBASE/results.log"
-        diff "$work/nm_ref.txt" "$work/nm_cand.txt" >>"$TMPBASE/results.log" || true
-        return 1
-      fi
-    fi
     i=$((i+1))
   done
   "$ref_ninja" -C "$ref_build" >"$work/noop.log" 2>&1
