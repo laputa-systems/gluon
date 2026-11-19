@@ -20,7 +20,7 @@ struct Args {
     targets: Vec<String>,
 }
 
-pub fn run(state: &State, args: &[String]) -> Result<u8, String> {
+pub(super) fn run(state: &State, args: &[String]) -> Result<u8, String> {
     let parsed = parse_args(args)?;
     let mut results = Vec::new();
     let mut added = HashSet::new();

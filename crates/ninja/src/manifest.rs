@@ -50,7 +50,6 @@ impl Scope {
     }
 }
 
-#[allow(dead_code)]
 pub fn parse(src: &str) -> Result<State, String> {
     let mut state = State::default();
     let mut scope = Scope::top_level();

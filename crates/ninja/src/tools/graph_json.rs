@@ -20,7 +20,7 @@ use crate::graph::{Edge, State};
 use crate::manifest::expand;
 use std::collections::HashSet;
 
-pub fn run(state: &State, args: &[String]) -> Result<u8, String> {
+pub(super) fn run(state: &State, args: &[String]) -> Result<u8, String> {
     let targets: Vec<&String> = args.iter().filter(|s| !s.starts_with('-')).collect();
 
     // Select edge indices to emit: all, or the transitive subtree of `targets`.

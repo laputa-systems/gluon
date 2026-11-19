@@ -14,7 +14,7 @@ struct Args {
     targets: Vec<String>,
 }
 
-pub fn run(state: &State, args: &[String]) -> Result<u8, String> {
+pub(super) fn run(state: &State, args: &[String]) -> Result<u8, String> {
     let parsed = parse_args(args)?;
     let delim = parsed.delim.as_deref().unwrap_or("\t");
     let term = if parsed.print0 { '\0' } else { '\n' };

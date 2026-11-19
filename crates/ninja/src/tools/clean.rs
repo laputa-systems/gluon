@@ -41,7 +41,7 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
     Ok(out)
 }
 
-pub fn run(state: &State, args: &[String]) -> Result<u8, String> {
+pub(super) fn run(state: &State, args: &[String]) -> Result<u8, String> {
     let parsed = parse_args(args)?;
 
     // Collect the edge index set we're going to clean.

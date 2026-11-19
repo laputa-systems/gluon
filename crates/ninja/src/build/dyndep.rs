@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
-pub struct DyndepFile {
+pub(super) struct DyndepFile {
     /// Map of explicit-output name → declarations for the matching edge.
     pub entries: HashMap<String, DyndepEntry>,
 }
@@ -31,13 +31,13 @@ impl DyndepFile {
 }
 
 #[derive(Debug, Default)]
-pub struct DyndepEntry {
+pub(super) struct DyndepEntry {
     pub implicit_outputs: Vec<String>,
     pub implicit_inputs: Vec<String>,
     pub restat: bool,
 }
 
-pub fn parse(src: &str) -> Result<DyndepFile, String> {
+pub(super) fn parse(src: &str) -> Result<DyndepFile, String> {
     let mut ddf = DyndepFile::default();
     let mut lines = src.lines().peekable();
     let mut saw_version = false;
