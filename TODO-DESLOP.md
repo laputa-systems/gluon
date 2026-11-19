@@ -76,6 +76,16 @@ successful builds and the two intentional failures. The macOS rerun had
 51 successful builds, the two intentional failures, and two shared
 Wayland setup failures caused by missing dependencies.
 
+The runner now requires the expected stage exit status from each tool.
+Only the missing install script and missing Ninja input declare a
+nonzero exit. The shell regression rejects both an unexpected shared
+failure and unexpected success in a failure fixture. Missing pkg-config
+prerequisites are explicit skips. The Alpine rerun recorded 55 passes
+including the two intentional failures, with zero skips. The macOS
+rerun recorded 53 passes including the two intentional failures, and
+skipped both Wayland fixtures because pkg-config could not resolve their
+dependencies.
+
 ## Tickets
 
 

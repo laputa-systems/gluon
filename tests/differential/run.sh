@@ -1,8 +1,6 @@
 #!/bin/bash
 # Differential harness (P-6, P-7). Compares reference Meson/Ninja against
 # gluon meson/ninja on fixture corpus.
-# Success: exit 0 only if every fixture parity matches or is ledgered in
-# expected-fail, and no ledgered fixture now passes. Identical over 3 repeats.
 set -u
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -61,7 +59,6 @@ ledger_cause() {
 meson_dirs=$(find "$FIX_DIR/meson" -mindepth 1 -maxdepth 1 -type d | LC_ALL=C sort)
 ninja_dirs=$(find "$FIX_DIR/ninja" -mindepth 1 -maxdepth 1 -type d | LC_ALL=C sort)
 
-# clean temp base for repeatability (identical over 3 repeats)
 rm -rf "$TMPBASE"
 mkdir -p "$TMPBASE"
 
@@ -78,6 +75,19 @@ require_idle_ninja() {
   fi
   if grep -q "^$progress" "$work/noop.log" "$work/cand_noop.log"; then
     printf 'FAIL %s no-op ran a build edge\n' "$id" >>"$TMPBASE/results.log"
+    return 1
+  fi
+  return 0
+}
+
+check_step_exit() {
+  local id=$1 stage=$2 reference=$3 candidate=$4 expected=0
+  local expectation="$FIX_DIR/$id/$stage-exit"
+  if [ -f "$expectation" ]; then
+    expected=$(cat "$expectation") || return 1
+  fi
+  if [ "$reference" != "$expected" ] || [ "$candidate" != "$expected" ]; then
+    printf 'FAIL %s %s exit expected=%s ref=%s cand=%s\n' "$id" "$stage" "$expected" "$reference" "$candidate" >>"$TMPBASE/results.log"
     return 1
   fi
   return 0
@@ -125,21 +135,14 @@ run_compare_meson() {
   fi
   (cd "$cand_work" && PATH=$setup_path env ${setup_env[@]+"${setup_env[@]}"} "$GLUON_MESON" setup "$src_copy" ${setup_args[@]+"${setup_args[@]}"} >"$work/cand_setup.log" 2>&1)
   cand_setup=$?
-  if [ "$ref_setup" != "$cand_setup" ]; then
-    printf 'FAIL %s setup exit ref=%s cand=%s\n' "$id" "$ref_setup" "$cand_setup" >>"$TMPBASE/results.log"
-    return 1
-  fi
+  check_step_exit "$id" setup "$ref_setup" "$cand_setup" || return 1
   stray=$(cd "$cand_work" && ls -A | grep -vx builddir)
   if [ -n "$stray" ]; then
     printf 'FAIL %s setup wrote outside the build directory: %s\n' "$id" "$stray" >>"$TMPBASE/results.log"
     return 1
   fi
   if [ "$ref_setup" != "0" ]; then
-    if [ -f "$src/expect-build-success" ]; then
-      printf 'FAIL %s expected a successful setup (both exit %s)\n' "$id" "$ref_setup" >>"$TMPBASE/results.log"
-      return 1
-    fi
-    printf 'PASS %s setup-both-fail (both exit %s)\n' "$id" "$ref_setup" >>"$TMPBASE/results.log"
+    printf 'PASS %s expected setup failure (exit %s)\n' "$id" "$ref_setup" >>"$TMPBASE/results.log"
     return 0
   fi
   skip_edges=0
@@ -150,16 +153,9 @@ run_compare_meson() {
   ref_build_exit=$?
   "$GLUON_NINJA" -C "$cand_build" >"$work/cand_build.log" 2>&1
   cand_build_exit=$?
-  if [ "$ref_build_exit" != "$cand_build_exit" ]; then
-    printf 'FAIL %s build exit ref=%s cand=%s\n' "$id" "$ref_build_exit" "$cand_build_exit" >>"$TMPBASE/results.log"
-    return 1
-  fi
+  check_step_exit "$id" build "$ref_build_exit" "$cand_build_exit" || return 1
   if [ "$ref_build_exit" != "0" ]; then
-    if [ -f "$src/expect-build-success" ]; then
-      printf 'FAIL %s expected a successful build (both exit %s)\n' "$id" "$ref_build_exit" >>"$TMPBASE/results.log"
-      return 1
-    fi
-    printf 'PASS %s build-both-fail (both exit %s)\n' "$id" "$ref_build_exit" >>"$TMPBASE/results.log"
+    printf 'PASS %s expected build failure (exit %s)\n' "$id" "$ref_build_exit" >>"$TMPBASE/results.log"
     return 0
   fi
   if [ -f "$src/expect-flags.txt" ]; then
@@ -283,16 +279,9 @@ run_compare_ninja() {
   ref_build_exit=$?
   "$GLUON_NINJA" -C "$cand_work" >"$work/cand_build.log" 2>&1
   cand_build_exit=$?
-  if [ "$ref_build_exit" != "$cand_build_exit" ]; then
-    printf 'FAIL %s build exit ref=%s cand=%s\n' "$id" "$ref_build_exit" "$cand_build_exit" >>"$TMPBASE/results.log"
-    return 1
-  fi
+  check_step_exit "$id" build "$ref_build_exit" "$cand_build_exit" || return 1
   if [ "$ref_build_exit" != "0" ]; then
-    if [ -f "$src/expect-build-success" ]; then
-      printf 'FAIL %s expected a successful build (both exit %s)\n' "$id" "$ref_build_exit" >>"$TMPBASE/results.log"
-      return 1
-    fi
-    printf 'PASS %s build-both-fail (both exit %s)\n' "$id" "$ref_build_exit" >>"$TMPBASE/results.log"
+    printf 'PASS %s expected build failure (exit %s)\n' "$id" "$ref_build_exit" >>"$TMPBASE/results.log"
     return 0
   fi
   (cd "$work" && find . -type f ! -name '.ninja_log' ! -name '.ninja_deps' ! -name '*.log' ! -name 'files*.txt' ! -name 'results.log' | LC_ALL=C sort >"$work/files.txt")
@@ -321,6 +310,18 @@ overall=0
 for d in $meson_dirs; do
   name=$(basename "$d")
   id="meson/$name"
+  if [ -f "$d/requires-pkg-config" ]; then
+    missing=''
+    while IFS= read -r dependency; do
+      if ! pkg-config --exists "$dependency" 2>/dev/null; then
+        missing="$missing $dependency"
+      fi
+    done <"$d/requires-pkg-config"
+    if [ -n "$missing" ]; then
+      printf 'SKIP %s missing pkg-config dependencies:%s\n' "$id" "$missing" | tee -a "$TMPBASE/results.log"
+      continue
+    fi
+  fi
   if run_compare_meson "$id" "$name"; then
     result=pass
   else

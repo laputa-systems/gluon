@@ -1,14 +1,8 @@
 # Testing
 
-Parity is observable behavior, not text. A differential fixture passes when,
-against the reference (Meson 1.12.1 / Ninja 1.13.2), it matches: output
-artifacts (bytes, or symbols/install names for linked binaries where
-timestamps/paths differ), the command set after normalizing paths and
-argument order where order is not semantic, no-op and touch-rebuild
-behavior (which edges rerun), and exit codes. Normalization rules live in
-`tests/differential/` and are tested. The harness resolves Meson and Ninja from `PATH` once and checks their
-versions against [`tests/upstream/PINS`](../tests/upstream/PINS). It
-rejects executables that match the gluon candidates and stops if the
+The differential harness resolves Meson and Ninja from `PATH` once and
+checks their versions against [`tests/upstream/PINS`](../tests/upstream/PINS).
+It rejects executables that match the gluon candidates and stops if the
 reference setup reports `oxidized-meson`. Put the pinned upstream tools
 first on `PATH` before running the corpus.
 
@@ -23,11 +17,17 @@ are ignored, and an extraction error fails the fixture.
 The expected-fail ledger (`tests/differential/expected-fail`) lists
 fixtures known to diverge, one per line with a one-line cause. The harness
 fails on any unlisted mismatch and on any listed fixture that now passes.
-The ledger is empty. Fixtures with an `expect-build-success` marker require
-both builds to exit successfully before the harness compares their outputs.
-Marked Meson fixtures also require successful setup. `subninja` uses the
-marker to require an object built with a child-scoped rule, and
-`llvm-config-tool` requires the link that exposes its LLVM dependency flags.
+The ledger is empty. Setup and build must exit zero on both sides unless
+the fixture declares the expected status in `setup-exit` or `build-exit`.
+Intentional failure fixtures cover a missing install script and a missing
+Ninja input.
+
+Meson fixtures with `requires-pkg-config` are reported as skipped when
+their listed dependencies are unavailable. For a full run, provide zlib,
+wayland-client, wayland-protocols and the Wayland scanner. The Alpine
+3.24.2 run used `zlib-dev`, `wayland-dev` and `wayland-protocols`.
+Check `.work/tmp/diff/results.log` for skips before recording full
+coverage.
 
 Gates, narrowest first:
 
