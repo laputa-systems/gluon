@@ -10,3 +10,6 @@ rustybench = { version = "0.5" }
 [[bench]]
 name = "state"
 harness = false
+
+[lints]
+workspace = true

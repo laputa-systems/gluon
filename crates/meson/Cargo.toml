@@ -16,3 +16,6 @@ rustybench = { version = "0.5" }
 [[bench]]
 name = "meson"
 harness = false
+
+[lints]
+workspace = true

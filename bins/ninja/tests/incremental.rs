@@ -40,6 +40,34 @@ fn write_source(path: &Path, contents: &str, seconds: u64) {
 }
 
 #[test]
+fn clean_edge_does_not_hold_the_only_jobserver_token() {
+    let dir = scratch("jobserver");
+    let fifo = dir.join("fifo");
+    assert!(Command::new("mkfifo").arg(&fifo).status().unwrap().success());
+    fs::write(
+        dir.join("build.ninja"),
+        "rule copy\n  command = cp $in $out\nbuild clean.o: copy clean.c\nbuild dirty.o: copy dirty.c\n",
+    )
+    .unwrap();
+    fs::write(dir.join("clean.c"), "already built").unwrap();
+    fs::write(dir.join("dirty.c"), "needs building").unwrap();
+    build(&dir, &["clean.o"]);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_ninja"))
+        .args(["clean.o", "dirty.o"])
+        .current_dir(&dir)
+        .env("MAKEFLAGS", format!("--jobserver-auth=fifo:{}", fifo.display()))
+        .env_remove("NINJA_STATUS")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("cp clean.c clean.o"));
+    assert_eq!(fs::read_to_string(dir.join("dirty.o")).unwrap(), "needs building");
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn ordinary_inputs_rebuild_and_restat_stays_idle_after_observing_them() {
     let dir = scratch("incremental");
     fs::write(

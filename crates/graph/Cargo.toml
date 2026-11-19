@@ -10,3 +10,6 @@ rustybench = { version = "0.5" }
 [[bench]]
 name = "graph"
 harness = false
+
+[lints]
+workspace = true

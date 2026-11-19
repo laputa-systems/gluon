@@ -30,6 +30,7 @@ Benchmarks: `tests/benchmarks/run.sh` (needs `perf-gate-ready`)
 
 Invariants:
 
+- First-party Rust crates and tests inherit the workspace's unsafe-code prohibition.
 - User builds run in `crates/ninja`. `crates/engine` must not depend on
   Meson semantics. Meson setup writes `build.ninja` and does not execute
   the typed graph.
