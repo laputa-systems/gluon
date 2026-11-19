@@ -14,11 +14,10 @@ make bench BENCH_ARGS='--name engine --skip controls'
 within each kind they are alternatives, while kinds intersect. `--skip` takes
 names. Unknown values and empty selections fail. The dry run writes nothing.
 Full is manual-only: explicitly request `--tier Full`; it includes the
-Scenario corpus, which currently fails preflight. The driver checks selected
-executables and disk space before running anything. Cargo builds its own
-artifacts from the pinned toolchain and lockfile. The CLI corpus is blocked
-until DSLP-11 gives it reliable build failure and output checks. No external
-service is used. Host readiness and leftover processes are not checked; these runs do not
+Scenario corpus. The driver checks selected executables and disk space before running anything. Cargo builds its own
+artifacts from the pinned toolchain and lockfile. The CLI corpus checks command
+failures, artifacts and command counts. No external service is used. The driver
+does not check host readiness or leftover processes; component runs do not
 establish a timing gate.
 
 | Workload | Tier / area | Purpose, requirements and estimated cost |
@@ -29,7 +28,7 @@ establish a timing gate.
 | state | Change / state | Log, dependency and snapshot parsing/I/O; Cargo and writable TMPDIR; minutes cold. |
 | meson | Change / meson | Lexer/parser snippets; Cargo; minutes cold. |
 | ninja | Change / ninja | Synthetic manifest parsing, planning, expansion and hashing; Cargo; minutes cold. |
-| cli-corpus | Scenario / cli | Meson setup and Ninja dry-run/rebuild; pinned references, compiler and release binaries; tens of minutes estimated; blocked by DSLP-11. |
+| cli-corpus | Scenario / cli | Meson setup and Ninja dry-run/rebuild; pinned references, compiler and release binaries; tens of minutes estimated. |
 | all-components | Full / components | Entire Rustybench workspace; Cargo; minutes estimated. |
 
 Commands are printed by `bench-list` and `--dry-run`. Runs write logs and a

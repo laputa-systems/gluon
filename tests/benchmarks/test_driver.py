@@ -1,4 +1,5 @@
 import os
+import shutil
 import pathlib
 import tempfile
 import subprocess
@@ -38,12 +39,36 @@ class DriverTests(unittest.TestCase):
             run_dir = pathlib.Path(result.stdout.split('run directory: ')[1].strip())
             self.assertIn('engine: exit=7', (run_dir / 'summary.txt').read_text())
 
-    def test_failed_preflight_runs_nothing(self):
-        before = set((ROOT / '.work/bench').glob('*'))
-        result = self.invoke('run', '--tier', 'Scenario', '--name', 'cli-corpus')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('DSLP-11', result.stderr)
-        self.assertEqual(before, set((ROOT / '.work/bench').glob('*')))
+    def test_corpus_rejects_failed_build_commands(self):
+        scratch = ROOT / '.work/tmp'
+        scratch.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=scratch) as directory:
+            root = pathlib.Path(directory)
+            scripts = root / 'tests/benchmarks'
+            scripts.mkdir(parents=True)
+            shutil.copy(ROOT / 'tests/benchmarks/run.sh', scripts / 'run.sh')
+            binaries = root / 'target/release'
+            binaries.mkdir(parents=True)
+            fakebin = root / 'bin'
+            fakebin.mkdir()
+            for path in [fakebin / 'meson', fakebin / 'ninja', binaries / 'meson', binaries / 'ninja']:
+                path.write_text('#!/bin/sh\nexit 7\n')
+                path.chmod(0o755)
+            for name in ['perf-gate-ready', 'python3', 'sleep']:
+                path = fakebin / name
+                path.write_text('#!/bin/sh\nexit 0\n')
+                path.chmod(0o755)
+            env = os.environ.copy()
+            env['PATH'] = str(fakebin) + os.pathsep + env['PATH']
+            result = subprocess.run(['bash', str(scripts / 'run.sh')], text=True, capture_output=True, env=env)
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertNotIn('benchmarks: PASS', result.stdout)
+            self.assertIn('meson setup', result.stderr)
+
+    def test_corpus_preflight_is_available(self):
+        result = self.invoke('check', '--tier', 'Scenario', '--name', 'cli-corpus')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 
 if __name__ == '__main__':

@@ -12,21 +12,21 @@ with assertions of varying strength and 3–10 samples. They do not establish
 end-to-end setup, reconfigure, no-op, source/header rebuild, consumer
 throughput, artifact size or workload-tree CPU, memory and I/O outcomes.
 The CLI corpus attempts setup and dry-run graphs plus source/header edits,
-but its header is not a dependency and setup and build failures can be
-masked (DSLP-11); it neither checks equivalent work nor computes the claimed
-median. Its RSS scope differs by time backend, and CPU is not reported.
-The corpus has no accepted-revision anchor, post-run readiness check, or
-verified cleanup; its release binaries and references may be stale.
+but its header is not a dependency and it does not compute the claimed
+median. The corpus now checks command failures, artifacts and command counts.
+Its RSS scope differs by time backend, and CPU is not reported. The corpus
+has no accepted-revision anchor or verified cleanup; its release binaries
+and references may be stale.
 
-Ranked gaps: DSLP-11 (P2, demonstrated false pass) first; DSLP-22 (P3,
-missing representative correctness-checked journeys and resource evidence)
-next; DSLP-23 (P3, missing attribution) third. CPU sampling with child
+Ranked gaps: DSLP-22 (P3, missing representative correctness-checked
+journeys and resource evidence) first; DSLP-23 (P3, missing attribution)
+second. CPU sampling with child
 processes, allocator profiling and syscall/I/O tracing in separate runs are
 the cheapest attribution starting points; their scope and overhead need
 measurement. No performance regression is claimed. PR #39 supplies proposed
 work witnesses and PR #41 tests dependency recovery; both remain parked for
-readiness-qualified timing. The driver blocks the old corpus rather than
-accept its false result. Details and commands are in docs/benchmarks.md.
+readiness-qualified timing. The driver permits the corpus after its failure
+and work checks. Details and commands are in docs/benchmarks.md.
 The Edit controls took 0.65 s. The engine Change workload completed in
 129.84 s with a cold benchmark build and 8.44 s warm on the busy host.
 Its five samples and allocation report are diagnostic, not a timing gate.
@@ -395,14 +395,6 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 
 
 
-### DSLP-11 · P2 · benchmark gate passes when its build commands fail
-
-- **Area:** benchmark acceptance
-- **Where:** tests/benchmarks/run.sh:57–79
-- **Problem:** The benchmark script continues after failed setup and incremental commands, masks failed dry runs with || true, and prints benchmarks: PASS without checking artifact or command-count parity. In an isolated copy, all 14 timed Meson and Ninja invocations exited 7 and the script exited zero with PASS.
-- **Recommendation:** Make the CLI gate fail on workload errors and verify output or log witnesses before comparing paired dist timings. Include a known-failure control for the final status and check host readiness after timing. Keep the existing setup, reconfigure, no-op and incremental workloads.
-- **Fix with:** refactor-benchmarks
-- **Effort:** M
 
 ### DSLP-12 · P2 · keep-going schedules dependents of failed Ninja edges
 
