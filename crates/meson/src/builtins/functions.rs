@@ -2518,7 +2518,8 @@ fn builtin_configure_file(vm: &mut VM, args: &[CallArg]) -> Result<Object, Strin
     } else {
         format!("{}/{}", vm.build_root, vm.current_subdir)
     };
-    let _ = std::fs::create_dir_all(&build_subdir);
+    std::fs::create_dir_all(&build_subdir)
+        .map_err(|e| format!("configure_file: cannot create directory {build_subdir}: {e}"))?;
     let output_path = format!("{}/{}", build_subdir, output);
 
     if copy {
@@ -2531,12 +2532,13 @@ fn builtin_configure_file(vm: &mut VM, args: &[CallArg]) -> Result<Object, Strin
             } else {
                 format!("{}/{}/{}", vm.source_root, vm.current_subdir, inp)
             };
-            if std::fs::copy(&input_path, &output_path).is_ok() {
-                if let Ok(meta) = std::fs::metadata(&input_path) {
-                    if let Ok(mtime) = meta.modified() {
-                        if let Ok(f) = std::fs::OpenOptions::new().write(true).open(&output_path) {
-                            let _ = f.set_modified(mtime);
-                        }
+            std::fs::copy(&input_path, &output_path).map_err(|e| {
+                format!("configure_file: cannot copy {input_path} to {output_path}: {e}")
+            })?;
+            if let Ok(meta) = std::fs::metadata(&input_path) {
+                if let Ok(mtime) = meta.modified() {
+                    if let Ok(f) = std::fs::OpenOptions::new().write(true).open(&output_path) {
+                        let _ = f.set_modified(mtime);
                     }
                 }
             }
@@ -2551,7 +2553,8 @@ fn builtin_configure_file(vm: &mut VM, args: &[CallArg]) -> Result<Object, Strin
             } else {
                 format!("{}/{}/{}", vm.source_root, vm.current_subdir, inp)
             };
-            let mut content = std::fs::read_to_string(&input_path).unwrap_or_default();
+            let mut content = std::fs::read_to_string(&input_path)
+                .map_err(|e| format!("configure_file: cannot read {input_path}: {e}"))?;
             // Substitute @VAR@ patterns from configuration data
             if let Some(Object::ConfigurationData(ref cfg)) = configuration {
                 let values = cfg.values.borrow();
@@ -2565,7 +2568,8 @@ fn builtin_configure_file(vm: &mut VM, args: &[CallArg]) -> Result<Object, Strin
                     content = content.replace(&pattern, &val.to_string_value());
                 }
             }
-            let _ = std::fs::write(&output_path, &content);
+            std::fs::write(&output_path, &content)
+                .map_err(|e| format!("configure_file: cannot write {output_path}: {e}"))?;
         } else {
             // No input: emit #define/#undef per configuration value (Meson c-format)
             let mut lines: Vec<String> = vec![
@@ -2604,7 +2608,8 @@ fn builtin_configure_file(vm: &mut VM, args: &[CallArg]) -> Result<Object, Strin
             if lines.len() > 6 {
                 lines.push(String::new());
             }
-            let _ = std::fs::write(&output_path, lines.join("\n"));
+            std::fs::write(&output_path, lines.join("\n"))
+                .map_err(|e| format!("configure_file: cannot write {output_path}: {e}"))?;
         }
     } else if !command.is_empty() {
         // Command mode: execute command with substitutions
@@ -2650,37 +2655,24 @@ fn builtin_configure_file(vm: &mut VM, args: &[CallArg]) -> Result<Object, Strin
                 resolved_command[0].clone(),
                 resolved_command[1..].to_vec(),
             );
+            let command_line = std::iter::once(&cmd).chain(cmd_args.iter())
+                .map(|arg| format!("{arg:?}"))
+                .collect::<Vec<_>>().join(" ");
             let result = std::process::Command::new(&cmd)
                 .args(&cmd_args)
                 .current_dir(&build_subdir)
                 .env("MESON_BUILD_ROOT", &vm.build_root)
                 .env("MESON_SOURCE_ROOT", &vm.source_root)
                 .env("MESON_SUBDIR", &vm.current_subdir)
-                .output();
-            match result {
-                Ok(output_result) => {
-                    if capture {
-                        let _ = std::fs::write(&output_path, &output_result.stdout);
-                    }
-                    if !output_result.status.success() {
-                        if capture {
-                            let stderr = String::from_utf8_lossy(&output_result.stderr);
-                            return Err(format!(
-                                "ERROR: Error running command:\n{}",
-                                stderr.trim()
-                            ));
-                        }
-                        // Non-capture mode: silently ignore execution failures
-                        // The backend (ninja) will handle the actual execution
-                    }
-                }
-                Err(e) => {
-                    if capture {
-                        return Err(format!("ERROR: Error running command:\n{}", e));
-                    }
-                    // Non-capture mode: silently ignore execution failures
-                    // The backend (ninja) will handle the actual execution
-                }
+                .output()
+                .map_err(|e| format!("configure_file: cannot run {command_line}: {e}"))?;
+            if !result.status.success() {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                return Err(format!("configure_file: command {command_line} failed with {}: {}", result.status, stderr.trim()));
+            }
+            if capture {
+                std::fs::write(&output_path, &result.stdout)
+                    .map_err(|e| format!("configure_file: cannot write {output_path}: {e}"))?;
             }
         }
     }

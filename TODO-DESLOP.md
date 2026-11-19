@@ -408,14 +408,6 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 - **Effort:** M
 
 
-### DSLP-14 · P2 · Meson configure_file accepts missing inputs and failed commands
-
-- **Area:** Meson configuration effects
-- **Where:** crates/meson/src/builtins/functions.rs:2534,2544,2653
-- **Problem:** Gluon setup exits zero when configure_file with configuration data and input missing.in writes an empty file, and when configure_file with a command that exits seven leaves its declared output absent. Meson 1.12.1 rejects both setups with the source location and reason.
-- **Recommendation:** Propagate read, write, spawn and unsuccessful command results through setup. Verify expected bytes for successful inputs.
-- **Fix with:** error-model
-- **Effort:** M
 
 
 ### DSLP-15 · P2 · Meson configure drops machine-file options
