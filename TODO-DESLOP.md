@@ -134,6 +134,20 @@ and the following invocation was idle. The macOS corpus passed 56
 fixtures with two Wayland skips. The Alpine corpus passed all 58.
 The incremental test also passed in the pinned ARM64 musl toolchain.
 
+The warm Ninja comparison alternated six pairs of release binaries
+from `2a13e76` and `f883c86` on macOS ARM64. Separate Cargo targets
+produced distinct binaries. Each size used the same warmed directory
+for both commands with `-j2`. Input and output files existed for every
+edge. Both readiness checks exited zero, and all output bytes and build
+logs matched their pre-run snapshots.
+
+At 1,000 edges, median wall time went from 14.7 ms to 15.0 ms with
+ranges of 14.0–15.3 ms and 14.3–15.8 ms. At 10,000 edges the medians
+were 137.0 ms and 139.0 ms with ranges of 131.6–143.3 ms and
+138.7–140.6 ms. Median child CPU time at that size was 129.3 ms and
+131.8 ms. The differences fall within the observed spread. The
+broader performance corpus remains open.
+
 ## Tickets
 
 
