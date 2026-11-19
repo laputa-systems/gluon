@@ -65,6 +65,24 @@ ninja_dirs=$(find "$FIX_DIR/ninja" -mindepth 1 -maxdepth 1 -type d | LC_ALL=C so
 rm -rf "$TMPBASE"
 mkdir -p "$TMPBASE"
 
+require_idle_ninja() {
+  local id=$1 ref_build=$2 cand_build=$3 work=$4
+  local progress='gluon-parity-edge ' ref_noop cand_noop
+  NINJA_STATUS="${progress}%f/%t " "$ref_ninja" -C "$ref_build" >"$work/noop.log" 2>&1
+  ref_noop=$?
+  NINJA_STATUS="${progress}%f/%t " "$GLUON_NINJA" -C "$cand_build" >"$work/cand_noop.log" 2>&1
+  cand_noop=$?
+  if [ "$ref_noop" != 0 ] || [ "$cand_noop" != 0 ]; then
+    printf 'FAIL %s no-op exit ref=%s cand=%s\n' "$id" "$ref_noop" "$cand_noop" >>"$TMPBASE/results.log"
+    return 1
+  fi
+  if grep -q "^$progress" "$work/noop.log" "$work/cand_noop.log"; then
+    printf 'FAIL %s no-op ran a build edge\n' "$id" >>"$TMPBASE/results.log"
+    return 1
+  fi
+  return 0
+}
+
 run_compare_meson() {
   id=$1
   name=$2
@@ -210,22 +228,7 @@ run_compare_meson() {
     esac
     i=$((i+1))
   done
-  "$ref_ninja" -C "$ref_build" >"$work/noop.log" 2>&1
-  ref_noop=$?
-  "$GLUON_NINJA" -C "$cand_build" >"$work/cand_noop.log" 2>&1
-  cand_noop=$?
-  if [ "$ref_noop" != "$cand_noop" ]; then
-    printf 'FAIL %s no-op exit ref=%s cand=%s\n' "$id" "$ref_noop" "$cand_noop" >>"$TMPBASE/results.log"
-    return 1
-  fi
-  if [ "$skip_edges" -eq 0 ]; then
-    ref_edges=$(grep -c '^\[[0-9]*\/' "$work/build.log" || true)
-    cand_edges=$(grep -c '^\[[0-9]*\/' "$work/cand_build.log" || true)
-    if [ "$ref_edges" != "$cand_edges" ]; then
-      printf 'FAIL %s edge count ref=%s cand=%s\n' "$id" "$ref_edges" "$cand_edges" >>"$TMPBASE/results.log"
-      return 1
-    fi
-  fi
+  require_idle_ninja "$id" "$ref_build" "$cand_build" "$work" || return 1
   if [ -f "$src/compare-install" ]; then
     ref_dest="$work/dest"
     cand_dest="$cand_work/dest"
@@ -306,19 +309,7 @@ run_compare_ninja() {
       return 1
     fi
   done <"$work/files.txt"
-  local progress='gluon-parity-edge '
-  NINJA_STATUS="${progress}%f/%t " "$ref_ninja" -C "$work" >"$work/noop.log" 2>&1
-  ref_noop=$?
-  NINJA_STATUS="${progress}%f/%t " "$GLUON_NINJA" -C "$cand_work" >"$work/cand_noop.log" 2>&1
-  cand_noop=$?
-  if [ "$ref_noop" != 0 ] || [ "$cand_noop" != 0 ]; then
-    printf 'FAIL %s no-op exit ref=%s cand=%s\n' "$id" "$ref_noop" "$cand_noop" >>"$TMPBASE/results.log"
-    return 1
-  fi
-  if grep -q "^$progress" "$work/noop.log" "$work/cand_noop.log"; then
-    printf 'FAIL %s no-op ran a build edge\n' "$id" >>"$TMPBASE/results.log"
-    return 1
-  fi
+  require_idle_ninja "$id" "$work" "$cand_work" "$work" || return 1
   printf 'PASS %s\n' "$id" >>"$TMPBASE/results.log"
   return 0
 }

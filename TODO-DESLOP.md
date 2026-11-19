@@ -66,6 +66,16 @@ On macOS those two cases shared missing-dependency exits. On Alpine
 reported the intentional failing install-script and missing-dependency
 fixtures. GLU-28 and the full hosted parity gate stay open.
 
+The generator fixture now writes its declared `dep.txt` and defines its
+generated C symbol in one translation unit. On macOS ARM64 and Alpine
+3.24.2 ARM64 both binaries produced `dep.txt`, linked an executable
+that returned zero, and ran no edges on the repeat build. The idle check
+now applies to successful Meson fixtures too. With zlib-dev 1.4-r0 added,
+the pkg-config fixture built on Alpine. The full Linux rerun had 53
+successful builds and the two intentional failures. The macOS rerun had
+51 successful builds, the two intentional failures, and two shared
+Wayland setup failures caused by missing dependencies.
+
 ## Tickets
 
 
