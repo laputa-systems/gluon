@@ -334,10 +334,9 @@ fn schedule(
     // first; explicit slots are written back to the FIFO on release.
     let mut held_slots: Vec<Option<Slot>> = (0..plan.len()).map(|_| None).collect();
 
-    // Map edge index → its dependencies (inputs that have a producer in
-    // the plan). We use this to detect when an edge becomes ready.
     let in_plan: HashSet<usize> = plan.iter().copied().collect();
-    let mut deps: Vec<Vec<usize>> = vec![Vec::new(); plan.len()];
+    let mut dependents = vec![Vec::new(); plan.len()];
+    let mut remaining = vec![0; plan.len()];
     let mut idx_in_plan = std::collections::HashMap::with_capacity(plan.len());
     for (slot, &edge_idx) in plan.iter().enumerate() {
         idx_in_plan.insert(edge_idx, slot);
@@ -358,12 +357,12 @@ fn schedule(
                 && let Some(&dep_slot) = idx_in_plan.get(&prod)
                 && seen_dep.insert(dep_slot)
             {
-                deps[slot].push(dep_slot);
+                dependents[dep_slot].push(slot);
+                remaining[slot] += 1;
             }
         }
     }
 
-    let mut remaining: Vec<usize> = (0..plan.len()).map(|s| deps[s].len()).collect();
     let mut done = vec![false; plan.len()];
     let mut started = vec![false; plan.len()];
     let mut in_flight = 0usize;
@@ -606,13 +605,8 @@ fn schedule(
                     // Phony "completes" instantly; mark done inline so we
                     // can dispatch its dependents on this same loop turn.
                     started[slot] = true;
-                    done[slot] = true;
                     dyndep_producer_completed_inline |= pending_dyndep_producers.contains(&edge_idx);
-                    for s2 in 0..plan.len() {
-                        if deps[s2].contains(&slot) && !done[s2] {
-                            remaining[s2] = remaining[s2].saturating_sub(1);
-                        }
-                    }
+                    complete_slot(slot, &dependents, &mut done, &mut remaining);
                     continue;
                 }
                 let restat = rule_has_restat(state, &edge);
@@ -626,13 +620,8 @@ fn schedule(
                     for o in edge.outputs.iter().chain(&edge.implicit_outputs) {
                         dirty.insert(o.clone(), needs);
                     }
-                    done[slot] = true;
                     dyndep_producer_completed_inline |= pending_dyndep_producers.contains(&edge_idx);
-                    for s2 in 0..plan.len() {
-                        if deps[s2].contains(&slot) && !done[s2] {
-                            remaining[s2] = remaining[s2].saturating_sub(1);
-                        }
-                    }
+                    complete_slot(slot, &dependents, &mut done, &mut remaining);
                     continue;
                 }
                 let acquired_slot = if let Some(c) = jobserver_client.as_mut() {
@@ -766,7 +755,6 @@ fn schedule(
         for (outcome, command_started) in batch {
             in_flight -= 1;
             let slot = outcome.slot;
-            done[slot] = true;
             // Release the pool slot this edge held, if any.
             if let Some(name) = pool_for_edge(state, &edges[plan[slot]])
                 && !edges[plan[slot]].is_phony()
@@ -782,11 +770,7 @@ fn schedule(
             {
                 c.release(slot_token);
             }
-            for s2 in 0..plan.len() {
-                if deps[s2].contains(&slot) && !done[s2] {
-                    remaining[s2] = remaining[s2].saturating_sub(1);
-                }
-            }
+            complete_slot(slot, &dependents, &mut done, &mut remaining);
             // Update dirty status for the outputs based on restat.
             if outcome.restat {
                 let after: Vec<Option<SystemTime>> = outcome
@@ -943,6 +927,15 @@ fn schedule(
         println!("ninja: no work to do.");
     }
     Ok((0, any_real_work))
+}
+
+fn complete_slot(slot: usize, dependents: &[Vec<usize>], done: &mut [bool], remaining: &mut [usize]) {
+    done[slot] = true;
+    for &dependent in &dependents[slot] {
+        if !done[dependent] {
+            remaining[dependent] -= 1;
+        }
+    }
 }
 
 /// Decide whether the edge still needs to run *right now*. An edge
