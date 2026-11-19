@@ -165,14 +165,20 @@ fn missing_and_stale_dependency_records_rebuild_the_output() {
 fn dependency_log_write_failure_keeps_the_compilers_depfile() {
     let dir = scratch("deps-write-failure");
     cached_depfile_build(&dir);
+    let manifest = dir.join("build.ninja");
+    let mut rules = fs::read_to_string(&manifest).unwrap();
+    rules.push_str("rule finish\n  command = cp $in $out\nbuild done: finish app\ndefault done\n");
+    fs::write(manifest, rules).unwrap();
     fs::create_dir(dir.join(".ninja_deps")).unwrap();
     let failed = run(&dir, &["-k0"]);
     assert!(!failed.status.success(), "{failed:?}");
     assert!(String::from_utf8_lossy(&failed.stderr).contains(".ninja_deps"));
     assert_eq!(fs::read_to_string(dir.join("app.d")).unwrap(), "app: header\n");
+    assert!(!dir.join("done").exists());
 
     fs::remove_dir(dir.join(".ninja_deps")).unwrap();
     build(&dir, &[]);
+    assert_eq!(fs::read_to_string(dir.join("done")).unwrap(), "first");
     assert!(!dir.join("app.d").exists());
     assert!(dir.join(".ninja_deps").is_file());
     let idle = run(&dir, &[]);

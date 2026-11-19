@@ -324,6 +324,14 @@ gluon-ninja` caught all four scheduler completion changes. Removing
 the depfile dirtiness check survived the nine incremental CLI cases.
 The remaining identities were only listed and still need disposition.
 
+The replay against `e43f6d7` caught the same depfile-check mutation.
+The preview after removing the dependency log omitted the compile
+command, and the failure-recovery test found a depfile left after
+retry. The unmutated replay passed. All 50 focused Rust tests and both
+hosted checks passed at that head. The macOS differential run passed
+56 fixtures with two Wayland skips. Paired runtime timing deferred
+because the shared host was busy.
+
 The live fixture uses a `deps = gcc` and `restat = 1` rule that
 copies the header bytes into `app` and emits `app: header` into
 `app.d`. Gluon skipped work with a deleted dependency log and with
