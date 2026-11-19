@@ -227,10 +227,26 @@ The two Ninja packages passed 34 dist-profile tests on both macOS ARM64
 and ARM64 musl. The Linux run used the pinned image's
 `MUSL_BUILD_MODE=test` and prebuilt target standard library.
 The pinned ty and Ruff checks passed over the Python test helpers and
-fixtures. The broader Rust lint census included test-only assertions
-and enum fallbacks. Those diagnostics need review before adding more
-lint levels. Fleet retention still needs to verify Cargo workspace
-inheritance before registering this profile.
+fixtures. The fleet rule resolves workspace inheritance and checks all
+eight Gluon packages on the merged default revision.
+[Fleet rule](https://github.com/laputa-systems/stuff/pull/167) ·
+[Profile registration](https://github.com/laputa-systems/stuff/pull/168)
+
+The Types census ran `cargo clippy --locked --workspace --all-targets`
+with each candidate at warning level, using JSON diagnostics and
+counting unique primary file and line sites. The counts include tests.
+The following candidates were left out of the workspace profile.
+
+| Candidate | Sites | Reason |
+| --- | ---: | --- |
+| `cast_possible_truncation` | 47 | The blanket rule flags bounded string slice cursors and width-specific ELF encoding. |
+| `cast_sign_loss` | 23 | The same ELF encoder writes the bit representation of signed tags. Slice cursors clamp at zero before casting. |
+| `expect_used` | 7 | Six sites are fixture assertions. The only production site reads the executable path, which belongs with the existing integrated-invocation finding. |
+| `unwrap_used` | 373 | Test assertions and infallible writes into the backend's `String` account for many sites. |
+| `needless_pass_by_value` | 10 | Diagnostics include the public `Cli::parse_args_from` signature. The sampled sites did not demonstrate a correctness failure. |
+| `redundant_clone` | 27 | Sampled sites suggest allocation cleanup, with no demonstrated type or ownership defect. |
+| `wildcard_enum_match_arm` | 145 | The backend deliberately maps unhandled object variants to no target path. |
+| `match_wildcard_for_single_variants` | 0 | No witness. |
 
 The Diagnose review at `32f2ef4` covered Ninja dispatch and state,
 Meson setup, generated commands, installation and introspection, and
@@ -295,14 +311,6 @@ when started with `--version`.
 
 
 
-### DSLP-3 · P2 · Types: strict profile and typing findings
-
-- **Area:** deslop · types
-- **Where:** type checker and lint configuration; Rust/Python sources
-- **Problem:** The strict-profile candidates in the deslop skill's tools reference have not been measured here.
-- **Recommendation:** Run the deslop Types step. Accept: clean at the adopted profile, escape hatches not increased, witnesses recorded.
-- **Fix with:** deslop
-- **Effort:** M
 
 
 ### DSLP-4 · P2 · Tests: coverage, boundary gaps, mutation
