@@ -15,10 +15,11 @@ first on `PATH` before running the corpus.
 The expected-fail ledger (`tests/differential/expected-fail`) lists
 fixtures known to diverge, one per line with a one-line cause. The harness
 fails on any unlisted mismatch and on any listed fixture that now passes.
-The ledger is empty. A Ninja fixture with an `expect-build-success` marker
-requires both builds to exit successfully before the harness compares their
-outputs. The `subninja` fixture uses the marker to require an object built
-with the child file's scoped rule.
+The ledger is empty. Fixtures with an `expect-build-success` marker require
+both builds to exit successfully before the harness compares their outputs.
+Marked Meson fixtures also require successful setup. `subninja` uses the
+marker to require an object built with a child-scoped rule, and
+`llvm-config-tool` requires the link that exposes its LLVM dependency flags.
 
 Gates, narrowest first:
 
