@@ -7,6 +7,7 @@ fn run(dir: &Path, args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_ninja"))
         .arg("-j1")
         .args(args)
+        .env_remove("NINJA_STATUS")
         .current_dir(dir)
         .output()
         .unwrap()
@@ -254,5 +255,86 @@ default output
     assert!(!dir.join("metadata-ran").exists());
     build(&dir, &["-t", "clean"]);
     assert!(dir.join("deps.dd").is_file());
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn dry_run_reports_work_without_changing_files() {
+    let dir = scratch("dry-run");
+    fs::write(
+        dir.join("build.ninja"),
+        r"rule copy
+  command = cp -p $in $out
+  description = Copy $out
+  rspfile = $out.rsp
+  rspfile_content = $in
+build output: copy input
+",
+    )
+    .unwrap();
+    write_source(&dir.join("input"), "first", 1_700_000_000);
+    let cold = run(&dir, &["-n"]);
+    assert!(cold.status.success(), "{cold:?}");
+    assert_eq!(cold.stdout, b"[1/1] Copy output\n");
+    let verbose = run(&dir, &["-n", "-v"]);
+    assert!(verbose.status.success(), "{verbose:?}");
+    assert_eq!(verbose.stdout, b"[1/1] cp -p input output\n");
+    let quiet = run(&dir, &["-n", "--quiet"]);
+    assert!(quiet.status.success(), "{quiet:?}");
+    assert!(quiet.stdout.is_empty(), "{quiet:?}");
+    for path in ["output", "output.rsp", ".ninja_log", ".ninja_deps"] {
+        assert!(!dir.join(path).exists(), "{path}");
+    }
+
+    build(&dir, &[]);
+    let build_log = fs::read(dir.join(".ninja_log")).unwrap();
+    let clean = run(&dir, &["-n"]);
+    assert!(clean.status.success(), "{clean:?}");
+    assert_eq!(clean.stdout, b"ninja: no work to do.\n");
+
+    write_source(&dir.join("input"), "second", 1_700_000_001);
+    let changed = run(&dir, &["-n"]);
+    assert!(changed.status.success(), "{changed:?}");
+    assert_eq!(changed.stdout, b"[1/1] Copy output\n");
+    assert_eq!(fs::read_to_string(dir.join("output")).unwrap(), "first");
+    assert_eq!(fs::read(dir.join(".ninja_log")).unwrap(), build_log);
+    assert!(!dir.join("output.rsp").exists());
+    assert!(!dir.join(".ninja_deps").exists());
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn dry_run_cannot_load_newly_generated_dyndep_metadata() {
+    let dir = scratch("dry-run-generated-dyndep");
+    fs::write(
+        dir.join("build.ninja"),
+        r"rule prepare
+  command = cp meta.src deps.dd
+rule produce
+  command = touch $out
+build deps.dd: prepare meta.src
+build output: produce || deps.dd
+  dyndep = deps.dd
+default output
+",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("meta.src"),
+        "ninja_dyndep_version = 1\nbuild output: dyndep\n",
+    )
+    .unwrap();
+
+    let result = run(&dir, &["-n"]);
+    assert_eq!(result.status.code(), Some(1), "{result:?}");
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(stdout.starts_with("[1/2] cp meta.src deps.dd\n"), "{result:?}");
+    assert!(
+        stdout.contains("loading 'deps.dd'"),
+        "{result:?}"
+    );
+    for path in ["output", "deps.dd", ".ninja_log", ".ninja_deps"] {
+        assert!(!dir.join(path).exists(), "{path}");
+    }
     fs::remove_dir_all(dir).unwrap();
 }
