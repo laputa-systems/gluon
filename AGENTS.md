@@ -15,18 +15,30 @@ Benchmarks: `tests/benchmarks/run.sh` (needs `perf-gate-ready`)
 
 ## Verification
 
-- `make test` and hosted `make test-ci` run the differential checks and the locked dist tests.
-  The [backlog report](TODO-DESLOP.md#report) records measured suite costs.
-- Meson and Ninja CLI unit tests exercise selected arguments, exit paths, and help.
-  The installed help and differential fixtures separately check user-facing behavior.
-- Crate unit tests and the engine equivalence test cover public Rust behavior and
-  generated Ninja manifests. Install and introspection JSON have selected CLI
-  tests and separate install fixtures.
-- Ninja manifest, depfile, log, dependency and snapshot tests live in their owning
-  crates. The differential fixtures cover build and rebuild behavior.
-- FFmpeg-build, Laputa and Play exercise the command-line tools. See the
-  [consumer checks](docs/testing.md#consumer-checks).
-- The Meson and Ninja notices and `tests/upstream/PINS` record imported revisions.
+- Edit: `cargo test --profile dist --locked -p gluon-ninja --test incremental`
+  checks Ninja CLI rebuild and dyndep behavior; its standalone cost is unmeasured.
+- Change: `make test` runs harness controls and the workspace dist suite. The
+  Ground warm run took 4.81 s; the empty-target run took 278.19 s under shared load.
+- Scenario: `tests/differential/run.sh` compares the pinned tools and candidate
+  artifacts, exits and no-op builds; cost is unmeasured. Consumer checks and
+  benchmarks are separately invoked workloads.
+- Scheduling: `incremental::clean_edge_does_not_hold_the_only_jobserver_token`
+  checks clean and dirty work together; failed-edge dependent blocking is
+  unprotected (DSLP-12).
+- Dirty checking: `incremental::ordinary_inputs_rebuild_and_restat_stays_idle_after_observing_them`
+  checks explicit, implicit, phony and order-only inputs and restat. Missing
+  dependency records are unprotected (DSLP-13).
+- Depfiles: `incremental::recorded_header_changes_rebuild_the_output` checks
+  persisted header dependencies; `state::depfile` tests cover parsing. Dyndep
+  readiness and dry runs have incremental tests and differential fixtures.
+- CLI exits: `tests/differential/test-ninja-observables.sh` checks failure and
+  no-op status accounting; Meson `cli::tests` check test-command failures.
+- Meson subset: differential fixtures compare setup and artifacts; failed
+  `configure_file` inputs and commands are unprotected (DSLP-14).
+- Crate unit tests and engine equivalence cover public Rust behavior and generated
+  Ninja manifests. Install and introspection JSON have CLI and install fixtures.
+- FFmpeg-build, Laputa and Play are [consumers](docs/testing.md#consumer-checks).
+  The Meson and Ninja notices and `tests/upstream/PINS` record imported revisions.
 
 Invariants:
 

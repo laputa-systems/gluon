@@ -5,6 +5,26 @@ Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/mai
 
 ## Report
 
+The Tests audit mapped the critical contracts in `AGENTS.md`. The
+dependency-log header rebuild test now checks initial and changed output
+bytes and idle builds. On macOS ARM64 with cargo-mutants 27.1.0, the
+single `mark_depfile_dirty` comparison mutant (`>` to `<`) survived before
+the test and was caught afterwards: the output stayed `first` instead of
+`second`. The first attempt failed its baseline because cargo-mutants applied
+an integration-test selector to the Ninja library package; no mutant ran.
+The failed attempt and before/after trials used approximately 340 aggregate
+runner-seconds. There were no timeouts or unviable mutants in the completed
+trials. The survivor was a test gap, now asserted; DSLP-12 through DSLP-14
+retain separate known defects.
+
+`make coverage` reports Rust workspace coverage without the shell differential
+corpus: before the test, 31.37% lines and 20.96% branches; afterwards, 31.52%
+and 21.19%. The warm suite took 15.84 s before and 16.44 s after on a busy
+host; those observations are not a qualified timing gate. The configured
+crate mirror returned 404 for cargo-mutants and cargo-llvm-cov, while a known
+package resolved. The diff mutation gate and mirrored CI lane remain
+unqualified, and DSLP-4 remains open.
+
 Ground at `2a1bca45da57bc36da9a60e1666bd392c9fe011f` used
 macOS ARM64 and pinned nightly 2026-11-09. The default Make goal
 remains lint. The new `make test` alias runs the locked dist suite
