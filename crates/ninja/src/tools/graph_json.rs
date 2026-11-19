@@ -15,6 +15,7 @@
 //! and their transitive dependencies are emitted — essential at CMake scale
 //! (tens of thousands of edges) when only one target's subtree is wanted.
 
+use crate::build::is_generator;
 use crate::graph::{Edge, State};
 use crate::manifest::expand;
 use std::collections::HashSet;
@@ -95,9 +96,7 @@ fn emit_edge(state: &State, edge: &Edge, out: &mut String) {
     let restat = lookup(state, edge, rule, cli_command_restat!(), false)
         .map(|v| truthy(&v))
         .unwrap_or(false);
-    let generator = lookup(state, edge, rule, "generator", false)
-        .map(|v| truthy(&v))
-        .unwrap_or(false);
+    let generator = is_generator(state, edge);
 
     out.push_str("    {\n");
     out.push_str(&format!(

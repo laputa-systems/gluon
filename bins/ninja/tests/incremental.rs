@@ -220,3 +220,39 @@ default output
     }
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn current_dyndep_from_generator_is_usable_without_a_build_log() {
+    let dir = scratch("ready-dyndep-no-log");
+    fs::write(
+        dir.join("build.ninja"),
+        r"rule meta
+  command = cp template.dd deps.dd && touch metadata-ran
+  generator = 0
+rule generate
+  command = touch primary additional
+rule consume
+  command = test -f additional && touch $out
+build deps.dd: meta template.dd
+build primary: generate || deps.dd
+  dyndep = deps.dd
+build output: consume | additional || deps.dd
+  dyndep = deps.dd
+default output
+",
+    )
+    .unwrap();
+    let metadata =
+        "ninja_dyndep_version = 1\nbuild primary | additional: dyndep\nbuild output: dyndep\n";
+    fs::write(dir.join("template.dd"), metadata).unwrap();
+    fs::write(dir.join("deps.dd"), metadata).unwrap();
+
+    build(&dir, &["-n"]);
+    assert!(!dir.join("output").exists());
+    build(&dir, &[]);
+    assert!(dir.join("output").is_file());
+    assert!(!dir.join("metadata-ran").exists());
+    build(&dir, &["-t", "clean"]);
+    assert!(dir.join("deps.dd").is_file());
+    fs::remove_dir_all(dir).unwrap();
+}

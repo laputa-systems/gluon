@@ -14,7 +14,7 @@
 use super::depfile;
 use super::deps_log::DepsLog;
 use super::dyndep;
-use super::expand::{edge_binding, expand_in_edge, lookup_either};
+use super::expand::{edge_binding, expand_in_edge, is_generator, lookup_either};
 use super::jobserver::{self, Slot};
 use super::log;
 use super::plan::{build_plan, build_plan_with_producers, resolve_targets};
@@ -288,13 +288,16 @@ fn producer_is_ready(
         };
         let command = rule.bindings.get("command").map(String::as_str).unwrap_or("");
         let hash = log::hash_command(&expand_in_edge(state, &edge, command));
-        if edge.outputs.iter().chain(&edge.implicit_outputs).any(|output| {
-            !build_log.entries.get(output).is_some_and(|entry| entry.command_hash == hash)
-        }) {
+        if !is_generator(state, &edge)
+            && edge.outputs.iter().chain(&edge.implicit_outputs).any(|output| {
+                !build_log.entries.get(output).is_some_and(|entry| entry.command_hash == hash)
+            })
+        {
             return Ok(false);
         }
         mark_depfile_dirty(state, &edge, deps_log, &mut dirty);
         if edge_needs_run(
+            state,
             &edge,
             &dirty,
             &phony_mtimes,
@@ -472,7 +475,7 @@ fn schedule(
     // any restat binding and additional inputs for the edge.
     for (slot, &edge_idx) in plan.iter().enumerate() {
         let edge = &edges[edge_idx];
-        if edge.is_phony() {
+        if edge.is_phony() || is_generator(state, edge) {
             continue;
         }
         let new_hash = command_hashes[slot];
@@ -625,7 +628,7 @@ fn schedule(
                     continue;
                 }
                 let restat = rule_has_restat(state, &edge);
-                let needs = edge_needs_run(&edge, &dirty, &phony_mtimes, &prev_log, restat);
+                let needs = edge_needs_run(state, &edge, &dirty, &phony_mtimes, &prev_log, restat);
                 if !needs {
                     started[slot] = true;
                     for o in edge.outputs.iter().chain(&edge.implicit_outputs) {
@@ -937,6 +940,7 @@ fn schedule(
 /// outputs has been flagged dirty, or any of its inputs is currently
 /// flagged dirty.
 fn edge_needs_run(
+    state: &State,
     edge: &Edge,
     dirty: &HashMap<String, bool>,
     phony_mtimes: &HashMap<String, Option<SystemTime>>,
@@ -952,6 +956,7 @@ fn edge_needs_run(
         return true;
     }
     let mut newest_input = None;
+    let check_observed_mtime = !restat && !is_generator(state, edge);
     for o in edge.outputs.iter().chain(&edge.implicit_outputs) {
         if dirty.get(o) == Some(&true) {
             return true;
@@ -961,7 +966,7 @@ fn edge_needs_run(
         };
         let observed_ns = log::mtime_to_ns(Some(observed));
         let entry = previous_log.entries.get(o);
-        if !restat && entry.is_some_and(|entry| entry.mtime_ns != observed_ns) {
+        if check_observed_mtime && entry.is_some_and(|entry| entry.mtime_ns != observed_ns) {
             return true;
         }
         let output_mtime = if restat {
