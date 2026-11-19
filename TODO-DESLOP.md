@@ -214,6 +214,24 @@ installed version and notes matched the fixture bytes. This covers
 the downstream command and artifact checks. Laputa's package manager
 and dynamic-loader checks were outside that fixture run.
 
+The Rust profile census found nine unsafe-code diagnostics, all
+from the jobserver tests. The tests now pass flags directly to the
+parser or set them on a child Ninja process. FIFO creation uses
+`mkfifo`. The child test preserves the check that an existing clean
+edge leaves the implicit jobserver slot available to a dirty edge.
+The workspace forbids unsafe code and all eight packages inherit
+the lint. An injected unsafe block in a copy of the graph crate
+failed `cargo check --locked -p graph` at the block.
+
+The two Ninja packages passed 34 dist-profile tests on both macOS ARM64
+and ARM64 musl. The Linux run used the pinned image's
+`MUSL_BUILD_MODE=test` and prebuilt target standard library.
+The pinned ty and Ruff checks passed over the Python test helpers and
+fixtures. The broader Rust lint census included test-only assertions
+and enum fallbacks. Those diagnostics need review before adding more
+lint levels. Fleet retention still needs to verify Cargo workspace
+inheritance before registering this profile.
+
 The Diagnose review at `32f2ef4` covered Ninja dispatch and state,
 Meson setup, generated commands, installation and introspection, and
 the public entry points. The macOS dist suite passed 93 top-level tests
@@ -235,24 +253,6 @@ An isolated copy of the benchmark harness returned zero and printed
 seven. The review filed the failure as DSLP-11 and the runtime findings
 as DSLP-12 through DSLP-20. It did not qualify the full build and
 installation matrix or pursue owner-dependent work outside Gluon.
-
-The Rust profile census found nine unsafe-code diagnostics, all
-from the jobserver tests. The tests now pass flags directly to the
-parser or set them on a child Ninja process. FIFO creation uses
-`mkfifo`. The child test preserves the check that an existing clean
-edge leaves the implicit jobserver slot available to a dirty edge.
-The workspace forbids unsafe code and all eight packages inherit
-the lint. An injected unsafe block in a copy of the graph crate
-failed `cargo check --locked -p graph` at the block.
-
-The two Ninja packages passed 34 dist-profile tests on both macOS ARM64
-and ARM64 musl. The Linux run used the pinned image's
-`MUSL_BUILD_MODE=test` and prebuilt target standard library.
-The pinned ty and Ruff checks passed over the Python test helpers and
-fixtures. The broader Rust lint census included test-only assertions
-and enum fallbacks. Those diagnostics need review before adding more
-lint levels. Fleet retention still needs to verify Cargo workspace
-inheritance before registering this profile.
 
 ## Tickets
 
