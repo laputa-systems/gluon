@@ -10,7 +10,6 @@ mkdir -p "$scratch/bin" "$scratch/target/release" "$scratch/tests/upstream" \
 cp "$root/tests/differential/"{run,references,symbols,test-symbols}.sh "$diff_dir/"
 cp "$root/tests/differential/normalize.py" "$diff_dir/"
 cp "$root/tests/upstream/PINS" "$scratch/tests/upstream/"
-touch "$diff_dir/fixtures/ninja/one/expect-build-success"
 export MESON_PIN NINJA_PIN
 MESON_PIN=$(awk -F= '$1 == "MESON_VERSION" { print $2 }' "$scratch/tests/upstream/PINS")
 NINJA_PIN=$(awk -F= '$1 == "NINJA_VERSION" { print $2 }' "$scratch/tests/upstream/PINS")
@@ -23,12 +22,15 @@ cat >"$scratch/bin/ninja" <<'EOF'
 #!/bin/sh
 if [ "$1" = --version ]; then
   printf '%s\n' "$NINJA_PIN"
+elif [ "$FAULT" = build-exit ]; then
+  exit 7
 elif [ ! -f "$2/out" ]; then
   printf 'fixture' >"$2/out"
 fi
 EOF
 cat >"$scratch/target/release/ninja" <<'EOF'
 #!/bin/sh
+if [ "$FAULT" = build-exit ]; then exit 7; fi
 if [ -f "$2/out" ]; then
   case "$FAULT" in
     rebuild) printf '%s\n' "$NINJA_STATUS" ;;
@@ -63,3 +65,11 @@ reject() {
 reject bytes 'artifact bytes differ for ./out'
 reject rebuild 'no-op ran a build edge'
 reject exit 'no-op exit ref=0 cand=7'
+reject build-exit 'build exit expected=0 ref=7 cand=7'
+printf '7\n' >"$diff_dir/fixtures/ninja/one/build-exit"
+reject '' 'build exit expected=7 ref=0 cand=0'
+FAULT=build-exit bash "$diff_dir/run.sh" >"$scratch/control.log" 2>&1 || {
+  cat "$scratch/control.log" >&2
+  exit 1
+}
+grep -Fq 'PASS ninja/one expected build failure (exit 7)' "$scratch/.work/tmp/diff/results.log"
