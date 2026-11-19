@@ -1002,16 +1002,15 @@ fn mark_depfile_dirty(
         lookup_either(edge, rule, "deps").as_deref(),
         Some("gcc") | Some("msvc")
     );
-    if uses_deps_cache {
-        for out in edge.outputs.iter().chain(&edge.implicit_outputs) {
-            if !deps_log.records.contains_key(out) {
-                dirty.insert(out.clone(), true);
-            }
-        }
-    }
     let Some(path) = edge_binding(state, edge, rule, "depfile").filter(|path| !path.is_empty()) else {
         return;
     };
+    if uses_deps_cache
+        && let Some(out) = edge.outputs.first()
+        && !deps_log.records.contains_key(out)
+    {
+        dirty.insert(out.clone(), true);
+    }
     let text = std::fs::read_to_string(path).ok();
     let parsed = text.as_deref().map(depfile::parse);
     for out in edge.outputs.iter().chain(&edge.implicit_outputs) {

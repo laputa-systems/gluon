@@ -161,6 +161,40 @@ fn missing_dependency_record_rebuilds_the_output() {
 }
 
 #[test]
+fn secondary_outputs_without_dependency_records_stay_idle() {
+    for outputs in ["primary | secondary", "primary secondary"] {
+        let dir = scratch("secondary-output-deps");
+        fs::write(
+            dir.join("build.ninja"),
+            format!("rule generate\n  command = touch primary secondary; printf 'primary: input\\n' > primary.d\n  depfile = primary.d\n  deps = gcc\nbuild {outputs}: generate input\n"),
+        )
+        .unwrap();
+        fs::write(dir.join("input"), "input").unwrap();
+        build(&dir, &[]);
+        let idle = run(&dir, &[]);
+        assert!(idle.status.success(), "{idle:?}");
+        assert_eq!(idle.stdout, b"ninja: no work to do.\n", "{outputs}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[test]
+fn msvc_without_depfile_stays_idle() {
+    let dir = scratch("msvc-no-depfile");
+    fs::write(
+        dir.join("build.ninja"),
+        "rule generate\n  command = touch output\n  deps = msvc\nbuild output: generate input\n",
+    )
+    .unwrap();
+    fs::write(dir.join("input"), "input").unwrap();
+    build(&dir, &[]);
+    let idle = run(&dir, &[]);
+    assert!(idle.status.success(), "{idle:?}");
+    assert_eq!(idle.stdout, b"ninja: no work to do.\n");
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn ordinary_inputs_rebuild_and_restat_stays_idle_after_observing_them() {
     let dir = scratch("incremental");
     fs::write(
