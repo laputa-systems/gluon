@@ -299,12 +299,24 @@ run_compare_ninja() {
     diff "$work/files.txt" "$work/cand_files.txt" >>"$TMPBASE/results.log" || true
     return 1
   fi
-  "$ref_ninja" -C "$work" >"$work/noop.log" 2>&1
+  local relative
+  while IFS= read -r relative; do
+    if ! cmp -s "$work/$relative" "$cand_work/$relative"; then
+      printf 'FAIL %s artifact bytes differ for %s\n' "$id" "$relative" >>"$TMPBASE/results.log"
+      return 1
+    fi
+  done <"$work/files.txt"
+  local progress='gluon-parity-edge '
+  NINJA_STATUS="${progress}%f/%t " "$ref_ninja" -C "$work" >"$work/noop.log" 2>&1
   ref_noop=$?
-  "$GLUON_NINJA" -C "$cand_work" >"$work/cand_noop.log" 2>&1
+  NINJA_STATUS="${progress}%f/%t " "$GLUON_NINJA" -C "$cand_work" >"$work/cand_noop.log" 2>&1
   cand_noop=$?
-  if [ "$ref_noop" != "$cand_noop" ]; then
+  if [ "$ref_noop" != 0 ] || [ "$cand_noop" != 0 ]; then
     printf 'FAIL %s no-op exit ref=%s cand=%s\n' "$id" "$ref_noop" "$cand_noop" >>"$TMPBASE/results.log"
+    return 1
+  fi
+  if grep -q "^$progress" "$work/noop.log" "$work/cand_noop.log"; then
+    printf 'FAIL %s no-op ran a build edge\n' "$id" >>"$TMPBASE/results.log"
     return 1
   fi
   printf 'PASS %s\n' "$id" >>"$TMPBASE/results.log"

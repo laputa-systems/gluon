@@ -12,6 +12,10 @@ rejects executables that match the gluon candidates and stops if the
 reference setup reports `oxidized-meson`. Put the pinned upstream tools
 first on `PATH` before running the corpus.
 
+For successful Ninja fixtures, the harness compares file contents and
+requires the second build to exit successfully without executing an edge.
+`make test-ci` exercises each check with an injected failure.
+
 The expected-fail ledger (`tests/differential/expected-fail`) lists
 fixtures known to diverge, one per line with a one-line cause. The harness
 fails on any unlisted mismatch and on any listed fixture that now passes.
