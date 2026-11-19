@@ -275,6 +275,15 @@ run_compare_ninja() {
     cp "$f" "$work/"
     cp "$f" "$cand_work/"
   done
+  if [ -f "$src/prepare-target" ]; then
+    local prepare_target ref_prepare cand_prepare
+    prepare_target=$(cat "$src/prepare-target") || return 1
+    "$ref_ninja" -C "$work" "$prepare_target" >"$work/prepare.log" 2>&1
+    ref_prepare=$?
+    "$GLUON_NINJA" -C "$cand_work" "$prepare_target" >"$work/cand_prepare.log" 2>&1
+    cand_prepare=$?
+    check_step_exit "$id" prepare "$ref_prepare" "$cand_prepare" || return 1
+  fi
   "$ref_ninja" -C "$work" >"$work/build.log" 2>&1
   ref_build_exit=$?
   "$GLUON_NINJA" -C "$cand_work" >"$work/cand_build.log" 2>&1
