@@ -12,9 +12,10 @@ rejects executables that match the gluon candidates and stops if the
 reference setup reports `oxidized-meson`. Put the pinned upstream tools
 first on `PATH` before running the corpus.
 
-For successful Ninja fixtures, the harness compares file contents and
-requires the second build to exit successfully without executing an edge.
-`make test-ci` exercises each check with an injected failure.
+For successful Ninja fixtures, the harness compares file contents. After
+each successful Meson or Ninja build, the second Ninja invocation must
+exit successfully without executing an edge. `make test-ci` exercises
+the file and idle checks with injected failures.
 For linked binaries and archives compared by symbols, the harness reads
 defined global symbols in portable `nm` format. Archive member headings
 are ignored, and an extraction error fails the fixture.
