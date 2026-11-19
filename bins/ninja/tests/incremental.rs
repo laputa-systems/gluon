@@ -110,6 +110,77 @@ default direct implicit ordered through-alias result
     fs::remove_dir_all(dir).unwrap();
 }
 
+fn cached_depfile_build(dir: &Path) {
+    fs::write(
+        dir.join("build.ninja"),
+        r"rule copy
+  command = cp -p header app && printf 'app: header\n' > app.d
+  depfile = app.d
+  deps = gcc
+  restat = 1
+build app: copy
+",
+    )
+    .unwrap();
+    write_source(&dir.join("header"), "first", 1_700_000_000);
+}
+
+#[test]
+fn missing_and_stale_dependency_records_rebuild_the_output() {
+    let dir = scratch("deps-cache");
+    cached_depfile_build(&dir);
+    build(&dir, &[]);
+    let idle = run(&dir, &[]);
+    assert!(idle.status.success(), "{idle:?}");
+    assert!(String::from_utf8_lossy(&idle.stdout).contains("no work to do"));
+
+    let old_log = fs::read(dir.join(".ninja_deps")).unwrap();
+    fs::remove_file(dir.join(".ninja_deps")).unwrap();
+    write_source(&dir.join("header"), "second", 1_700_000_001);
+    let preview = run(&dir, &["-n"]);
+    assert!(preview.status.success(), "{preview:?}");
+    assert!(String::from_utf8_lossy(&preview.stdout).contains("cp -p header app"));
+    assert_eq!(fs::read_to_string(dir.join("app")).unwrap(), "first");
+    assert!(!dir.join(".ninja_deps").exists());
+
+    build(&dir, &[]);
+    assert_eq!(fs::read_to_string(dir.join("app")).unwrap(), "second");
+    fs::write(dir.join(".ninja_deps"), old_log).unwrap();
+    write_source(&dir.join("header"), "third", 1_700_000_001);
+    build(&dir, &[]);
+    assert_eq!(fs::read_to_string(dir.join("app")).unwrap(), "third");
+
+    fs::write(dir.join("app.d"), "app: header\n").unwrap();
+    write_source(&dir.join("header"), "fourth", 1_700_000_001);
+    build(&dir, &[]);
+    assert_eq!(fs::read_to_string(dir.join("app")).unwrap(), "fourth");
+    assert!(!dir.join("app.d").exists());
+    let idle = run(&dir, &[]);
+    assert!(idle.status.success(), "{idle:?}");
+    assert!(String::from_utf8_lossy(&idle.stdout).contains("no work to do"));
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn dependency_log_write_failure_keeps_the_compilers_depfile() {
+    let dir = scratch("deps-write-failure");
+    cached_depfile_build(&dir);
+    fs::create_dir(dir.join(".ninja_deps")).unwrap();
+    let failed = run(&dir, &["-k0"]);
+    assert!(!failed.status.success(), "{failed:?}");
+    assert!(String::from_utf8_lossy(&failed.stderr).contains(".ninja_deps"));
+    assert_eq!(fs::read_to_string(dir.join("app.d")).unwrap(), "app: header\n");
+
+    fs::remove_dir(dir.join(".ninja_deps")).unwrap();
+    build(&dir, &[]);
+    assert!(!dir.join("app.d").exists());
+    assert!(dir.join(".ninja_deps").is_file());
+    let idle = run(&dir, &[]);
+    assert!(idle.status.success(), "{idle:?}");
+    assert!(String::from_utf8_lossy(&idle.stdout).contains("no work to do"));
+    fs::remove_dir_all(dir).unwrap();
+}
+
 #[test]
 fn stale_generated_dyndep_cannot_supply_a_missing_manifest_input() {
     let dir = scratch("stale-dyndep");

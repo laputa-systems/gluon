@@ -396,6 +396,7 @@ fn schedule(
     // one once even if multiple edges reference the same file.
     let mut dyndep_cache: HashMap<String, dyndep::DyndepFile> = HashMap::new();
     let mut dyndep_failure: Option<String> = None;
+    let mut deps_failure = None;
     // Edge indices whose dyndep file has already been merged in. Without
     // this we'd re-merge (and re-collide-against-self) every loop turn.
     let mut dyndep_loaded: HashSet<usize> = HashSet::new();
@@ -477,8 +478,10 @@ fn schedule(
         // Dispatch every ready edge up to the parallelism cap. We stop
         // launching new work once a hard failure or interruption fires
         // — let in-flight jobs drain so their output is preserved.
-        let stop_dispatching =
-            failure_count >= failure_limit || interrupted || dyndep_failure.is_some();
+        let stop_dispatching = failure_count >= failure_limit
+            || interrupted
+            || dyndep_failure.is_some()
+            || deps_failure.is_some();
         let mut dyndep_producer_completed_inline = false;
         if !stop_dispatching {
             // Eagerly merge every loadable dyndep file before deciding
@@ -807,32 +810,8 @@ fn schedule(
                             writer.record(std::slice::from_ref(out), &entry);
                         }
                     }
-                    // For `deps = gcc|msvc` edges: parse the freshly
-                    // dropped depfile, persist the discovered headers
-                    // into `.ninja_deps`, then unlink the depfile.
-                    // Reference ninja consumes the depfile this way
-                    // so the next invocation can answer dirtiness
-                    // questions purely from `.ninja_deps`.
-                    let edge_idx = plan[slot];
-                    let edge_ref = &edges[edge_idx];
-                    if let Some(rule) = state.rules.get(&edge_ref.rule) {
-                        let deps_kind = lookup_either(edge_ref, rule, "deps");
-                        let depfile = edge_binding(state, edge_ref, rule, "depfile");
-                        if matches!(deps_kind.as_deref(), Some("gcc") | Some("msvc"))
-                            && let Some(df_path) = depfile
-                            && !df_path.is_empty()
-                                && let Ok(text) = std::fs::read_to_string(&df_path)
-                            {
-                                let parsed = depfile::parse(&text);
-                                for out in edge_ref.outputs.iter().chain(&edge_ref.implicit_outputs)
-                                {
-                                    if let Some(deps_list) = parsed.targets.get(out) {
-                                        let mtime_ns = log::mtime_to_ns(mtime_of(out)) as u64;
-                                        let _ = deps_log.record(out, mtime_ns, deps_list);
-                                    }
-                                }
-                                let _ = std::fs::remove_file(&df_path);
-                            }
+                    if let Err(error) = record_cached_deps(state, &edges[plan[slot]], &mut deps_log) {
+                        deps_failure.get_or_insert(error);
                     }
                 }
                 OutcomeKind::Failed { code, combined } => {
@@ -889,6 +868,9 @@ fn schedule(
         //   ninja: build stopped: multiple rules generate X.
         eprintln!("ninja: build stopped: {msg}.");
         return Ok((1, any_real_work));
+    }
+    if let Some(error) = deps_failure {
+        return Err(error);
     }
     if let Some(code) = hard_failure {
         eprintln!("ninja: build stopped: subcommand failed.");
@@ -986,33 +968,69 @@ fn mark_depfile_dirty(
     let Some(path) = edge_binding(state, edge, rule, "depfile").filter(|path| !path.is_empty()) else {
         return;
     };
-    let text = std::fs::read_to_string(path).ok();
-    let parsed = text.as_deref().map(depfile::parse);
     let uses_deps_cache = matches!(
         lookup_either(edge, rule, "deps").as_deref(),
         Some("gcc") | Some("msvc")
     );
+    let parsed = if uses_deps_cache {
+        None
+    } else {
+        std::fs::read_to_string(&path).ok().map(|text| depfile::parse(&text))
+    };
+    let pending_depfile = uses_deps_cache && std::path::Path::new(&path).exists();
     for out in edge.outputs.iter().chain(&edge.implicit_outputs) {
-        let deps = parsed
-            .as_ref()
-            .and_then(|depfile| depfile.targets.get(out))
-            .map(Vec::as_slice)
-            .or_else(|| {
-                if uses_deps_cache {
-                    deps_log.records.get(out).map(|record| record.deps.as_slice())
-                } else {
-                    None
-                }
-            });
-        if let Some(deps) = deps {
-            let output_mtime = mtime_of(out);
-            if deps.iter().any(|dep| match (mtime_of(dep), output_mtime) {
-                (Some(input), Some(output)) => input > output,
-                _ => true,
-            }) {
+        let output_mtime = mtime_of(out);
+        let deps = if uses_deps_cache {
+            let Some(record) = deps_log.records.get(out).filter(|record| {
+                !pending_depfile && log::mtime_to_ns(output_mtime) <= u128::from(record.mtime_ns)
+            }) else {
                 dirty.insert(out.clone(), true);
-            }
+                continue;
+            };
+            Some(&record.deps)
+        } else {
+            parsed.as_ref().and_then(|depfile| depfile.targets.get(out))
+        };
+        if deps.is_some_and(|paths| paths.iter().any(|dep| match (mtime_of(dep), output_mtime) {
+            (Some(input), Some(output)) => input > output,
+            _ => true,
+        })) {
+            dirty.insert(out.clone(), true);
         }
+    }
+}
+
+fn record_cached_deps(state: &State, edge: &Edge, deps_log: &mut DepsLog) -> Result<(), String> {
+    let Some(rule) = state.rules.get(&edge.rule) else {
+        return Ok(());
+    };
+    if !matches!(lookup_either(edge, rule, "deps").as_deref(), Some("gcc") | Some("msvc")) {
+        return Ok(());
+    }
+    let Some(path) = edge_binding(state, edge, rule, "depfile").filter(|path| !path.is_empty()) else {
+        return Ok(());
+    };
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(format!("reading depfile '{path}': {error}")),
+    };
+    let parsed = depfile::parse(&text);
+    for out in edge.outputs.iter().chain(&edge.implicit_outputs) {
+        let deps = if text.is_empty() {
+            &[][..]
+        } else {
+            parsed.targets.get(out).map(Vec::as_slice)
+                .ok_or_else(|| format!("depfile '{path}' has no entry for '{out}'"))?
+        };
+        let mtime_ns = log::mtime_to_ns(mtime_of(out)) as u64;
+        deps_log.record(out, mtime_ns, deps)
+            .map_err(|error| format!("writing .ninja_deps for '{out}': {error}"))?;
+    }
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("removing depfile '{path}': {error}")),
     }
 }
 

@@ -301,6 +301,38 @@ Play rebuilt SPIRV-Cross and libplacebo with the candidate Ninja,
 linked `player-app`, and loaded the resulting libplacebo library
 when started with `--version`.
 
+
+**Ninja dependency-log validation**
+
+On macOS ARM64 at `ed66a55`, the locked workspace suite passed 93
+top-level Rust tests and one filtered child case. The pinned compiler
+used `-C instrument-coverage -Z coverage-options=branch`. Its
+`llvm-profdata` merged profiles from the unit tests and the spawned
+Ninja binary. `llvm-cov report` over Cargo's 11 executable artifacts,
+with registry and Rust toolchain paths omitted, reported 7,551 of
+23,241 lines and 1,067 of 5,096 branches. The scheduler exercised 191
+of 340 branches and the dependency log 43 of 64. These counts cover
+the instrumented Rust suite. The upstream differential corpus is
+separate.
+
+At `d0348de`, cargo-mutants 27.1.0 listed 202 identities in
+`crates/ninja/src/build/runner.rs` and 121 in
+`crates/state/src/deps_log.rs`. Running `--baseline run --gitignore true
+--timeout 25 --build-timeout 480 --file crates/ninja/src/build/runner.rs
+--re 'complete_slot|replace mark_depfile_dirty with \(\)' --test-package
+gluon-ninja` caught all four scheduler completion changes. Removing
+the depfile dirtiness check survived the nine incremental CLI cases.
+The remaining identities were only listed and still need disposition.
+
+The live fixture uses a `deps = gcc` and `restat = 1` rule that
+copies the header bytes into `app` and emits `app: header` into
+`app.d`. Gluon skipped work with a deleted dependency log and with
+a cached record older than its output. Ninja 1.13.2 rebuilt in both
+cases. A directory at `.ninja_deps` also exposed a write error that
+Gluon discarded. The fixtures check the preview, updated artifact,
+write error, retained depfile and idle build after recovery.
+[Ninja dependency scan](https://github.com/ninja-build/ninja/blob/v1.13.2/src/graph.cc#L675-L701)
+
 ## Tickets
 
 

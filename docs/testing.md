@@ -25,6 +25,12 @@ Ninja input and an absent dyndep file after its producer completes.
 A Ninja fixture can name a target in `prepare-target`. Both engines build
 it before the default build so the fixture can exercise incremental state.
 
+The Ninja CLI tests also exercise dependency-log recovery. Edges that cache
+a compiler depfile rebuild when its record is missing or predates the output.
+Gluon keeps the compiler depfile if writing the dependency log fails and
+stops scheduling new commands. A subsequent build reruns an edge with an
+unconsumed depfile so it can complete publication.
+
 Meson fixtures with `requires-pkg-config` are reported as skipped when
 their listed dependencies are unavailable. For a full run, provide zlib,
 wayland-client, wayland-protocols and the Wayland scanner. The Alpine
