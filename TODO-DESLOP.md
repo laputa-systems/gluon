@@ -1,9 +1,35 @@
 Prefix: DSLP
-Next: 22
+Next: 24
 
 Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/main/docs/campaigns/deslop.md), tier B). One agent works this file with the `deslop` skill: take the lowest-numbered open ticket whose area does not start with `Needs owner ·`. After DSLP-5, work the open P1 and P2 findings, then fill in `## Report` below.
 
 ## Report
+
+Bench audit (2026-11-19): the Rustybench engine queue, graph interning and
+lookup, state logs/depfiles/snapshots, Meson lexer/parser and Ninja
+manifest/planner/expansion/hash workloads are synthetic component probes,
+with assertions of varying strength and 3–10 samples. They do not establish
+end-to-end setup, reconfigure, no-op, source/header rebuild, consumer
+throughput, artifact size or workload-tree CPU, memory and I/O outcomes.
+The CLI corpus attempts setup and dry-run graphs plus source/header edits,
+but its header is not a dependency and setup and build failures can be
+masked (DSLP-11); it neither checks equivalent work nor computes the claimed
+median. Its RSS scope differs by time backend, and CPU is not reported.
+The corpus has no accepted-revision anchor, post-run readiness check, or
+verified cleanup; its release binaries and references may be stale.
+
+Ranked gaps: DSLP-11 (P2, demonstrated false pass) first; DSLP-22 (P3,
+missing representative correctness-checked journeys and resource evidence)
+next; DSLP-23 (P3, missing attribution) third. CPU sampling with child
+processes, allocator profiling and syscall/I/O tracing in separate runs are
+the cheapest attribution starting points; their scope and overhead need
+measurement. No performance regression is claimed. PR #39 supplies proposed
+work witnesses and PR #41 tests dependency recovery; both remain parked for
+readiness-qualified timing. The driver blocks the old corpus rather than
+accept its false result. Details and commands are in docs/benchmarks.md.
+The Edit controls took 0.65 s. The engine Change workload completed in
+129.84 s with a cold benchmark build and 8.44 s warm on the busy host.
+Its five samples and allocation report are diagnostic, not a timing gate.
 
 The Tests audit mapped the critical contracts in `AGENTS.md`. The
 dependency-log header rebuild test now checks initial and changed output
@@ -474,3 +500,22 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 - **Recommendation:** Decide whether consumers may lose these members; if so remove them and the recompact-only test, preserving the supported on-disk format.
 - **Fix with:** dead-code-archaeology
 - **Effort:** S
+
+### DSLP-22 · P3 · measure verified end-to-end build journeys
+
+- **Area:** benchmark coverage
+- **Where:** tests/benchmarks/run.sh:57-79; crates/ninja/benches/ninja.rs:23
+- **Problem:** Component benchmarks use synthetic data and the CLI corpus lacks equivalent-work witnesses; no trusted workload covers real setup, reconfigure, no-op, source and header rebuilds or consumer-scale throughput and resource usage. Regressions in these journeys can escape measurement.
+- **Recommendation:** After DSLP-11, add pinned representative consumer journeys with output and completed-work checks, paired baselines and scoped CPU, memory and I/O measurements.
+- **Fix with:** refactor-benchmarks
+- **Effort:** L
+
+
+### DSLP-23 · P3 · add attribution for build performance regressions
+
+- **Area:** benchmark observability
+- **Where:** tests/benchmarks/run.sh:30-42; crates/engine/benches/engine.rs:2
+- **Problem:** The suite reports elapsed time and limited process RSS or allocator counts but has no documented workload-tree CPU, allocation, I/O or trace attribution. A change in a benchmark cannot be localized reliably, and child peaks are not workload-tree peaks.
+- **Recommendation:** Document separate diagnostic runs using platform CPU sampling, allocation profiling and syscall or I/O tracing with operation boundaries, including scope and overhead.
+- **Fix with:** bench-pyramid
+- **Effort:** M
