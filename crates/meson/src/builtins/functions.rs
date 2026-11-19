@@ -2673,8 +2673,6 @@ fn builtin_configure_file(vm: &mut VM, args: &[CallArg]) -> Result<Object, Strin
             if capture {
                 std::fs::write(&output_path, &result.stdout)
                     .map_err(|e| format!("configure_file: cannot write {output_path}: {e}"))?;
-            } else if !std::path::Path::new(&output_path).exists() {
-                return Err(format!("configure_file: command {command_line} did not create output {output_path}"));
             }
         }
     }

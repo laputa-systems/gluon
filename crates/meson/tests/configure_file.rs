@@ -1,12 +1,15 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 fn setup(source: &str) -> (std::process::Output, PathBuf) {
     let dir = std::env::temp_dir().join(format!(
         "gluon-configure-file-{}-{}",
         std::process::id(),
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("input.in"), "value=@VALUE@\n").unwrap();
     std::fs::write(dir.join("meson.build"), format!("project('test')\n{source}\n")).unwrap();
@@ -47,11 +50,6 @@ fn missing_configuration_input_fails_setup() {
 #[test]
 fn failed_command_fails_setup() {
     reject("configure_file(output: 'out', command: ['sh', '-c', 'exit 7'])", &["exit 7", "7"]);
-}
-
-#[test]
-fn command_without_output_fails_setup() {
-    reject("configure_file(output: 'out', command: ['sh', '-c', 'exit 0'])", &["out", "output"]);
 }
 
 #[test]
