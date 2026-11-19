@@ -26,6 +26,20 @@ existing benchmark suite remains the workload for build hot paths.
 Consumer, differential, install and release performance gates
 remain separate work.
 
+The differential harness review reproduced the self-comparison problem
+from GLU-28. The installed gluon binaries declared the same versions as
+upstream. With those binaries first on `PATH`, the prior harness accepted
+them as its own references. The preflight now checks the pinned versions,
+rejects matching binaries, and keeps the resolved reference paths for the
+fixture run. `make test-ci` exercises the preflight fixtures.
+
+The updated harness passed with Homebrew Meson 1.12.1 and Ninja 1.13.2
+and the installed `release-fa8b6aa` candidate. Six cases still shared a
+build or setup failure. Among them, `subninja` used a child-scoped rule
+from the parent, both Wayland fixtures lacked dependencies, and
+`llvm-config-tool` failed at link time. The full hosted parity gate and
+remaining Diagnose review stay open.
+
 ## Tickets
 
 

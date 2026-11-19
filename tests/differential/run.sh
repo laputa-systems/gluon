@@ -11,6 +11,8 @@ FIX_DIR="$DIFF_DIR/fixtures"
 LEDGER="$DIFF_DIR/expected-fail"
 TMPBASE="$ROOT/.work/tmp/diff"
 . "$DIFF_DIR/symbols.sh"
+. "$DIFF_DIR/references.sh"
+PIN_FILE="$ROOT/tests/upstream/PINS"
 GLUON_MESON="$ROOT/target/release/meson"
 GLUON_NINJA="$ROOT/target/release/ninja"
 
@@ -19,35 +21,21 @@ export TZ=UTC
 export ZERO_AR_DATE=1
 mkdir -p "$TMPBASE"
 
-# selftest normalization rules (P-6)
+if [ ! -x "$GLUON_MESON" ] || [ ! -x "$GLUON_NINJA" ]; then
+  echo "error: gluon bins missing; run cargo build --release first" >&2
+  exit 1
+fi
+meson_pin=$(awk -F= '$1 == "MESON_VERSION" { print $2 }' "$PIN_FILE") || exit 1
+ninja_pin=$(awk -F= '$1 == "NINJA_VERSION" { print $2 }' "$PIN_FILE") || exit 1
+ref_meson=$(reference_tool meson "$GLUON_MESON" "$meson_pin") || exit 1
+ref_ninja=$(reference_tool ninja "$GLUON_NINJA" "$ninja_pin") || exit 1
+printf 'reference meson %s (%s), ninja %s (%s)\n' "$meson_pin" "$ref_meson" "$ninja_pin" "$ref_ninja"
+
 if ! python3 "$DIFF_DIR/normalize.py" --selftest >/dev/null 2>&1; then
   echo "error: normalize selftest failed" >&2
   exit 1
 fi
 bash "$DIFF_DIR/test-symbols.sh" || exit 1
-
-# verify pins (P-3)
-ref_meson=$(meson --version 2>&1 | head -1)
-ref_ninja=$(ninja --version 2>&1 | head -1)
-ref_muon=$(muon version 2>&1 | head -1)
-if [ "$ref_meson" != "1.12.1" ]; then
-  echo "warning: expected meson 1.12.1, found $ref_meson" >&2
-fi
-if [ "$ref_ninja" != "1.13.2" ]; then
-  echo "warning: expected ninja 1.13.2, found $ref_ninja" >&2
-fi
-case "$ref_muon" in
-  *0.7.0*) : ;;
-  *) echo "warning: expected muon 0.7.0, found $ref_muon" >&2 ;;
-esac
-
-if [ ! -x "$GLUON_MESON" ] || [ ! -x "$GLUON_NINJA" ]; then
-  echo "error: gluon bins missing; run cargo build --release first" >&2
-  exit 1
-fi
-gluon_meson_ver=$("$GLUON_MESON" --version 2>&1 | head -1)
-gluon_ninja_ver=$("$GLUON_NINJA" --version 2>&1 | head -1)
-echo "reference meson $ref_meson ninja $ref_ninja; gluon meson $gluon_meson_ver ninja $gluon_ninja_ver"
 
 # helper: ledger lookup (bash 3.2 compatible, no assoc arrays)
 ledger_has() {
@@ -111,8 +99,12 @@ run_compare_meson() {
   fi
   setup_path=$PATH
   [ -d "$src_copy/bin" ] && setup_path="$src_copy/bin:$PATH"
-  PATH=$setup_path env ${setup_env[@]+"${setup_env[@]}"} meson setup "$ref_build" "$src_copy" ${setup_args[@]+"${setup_args[@]}"} >"$work/setup.log" 2>&1
+  PATH=$setup_path env ${setup_env[@]+"${setup_env[@]}"} NINJA="$ref_ninja" "$ref_meson" setup "$ref_build" "$src_copy" ${setup_args[@]+"${setup_args[@]}"} >"$work/setup.log" 2>&1
   ref_setup=$?
+  if grep -Fq ' (oxidized-meson)' "$work/setup.log"; then
+    printf 'error: reference Meson identified itself as oxidized-meson: %s\n' "$ref_meson" >&2
+    exit 1
+  fi
   (cd "$cand_work" && PATH=$setup_path env ${setup_env[@]+"${setup_env[@]}"} "$GLUON_MESON" setup "$src_copy" ${setup_args[@]+"${setup_args[@]}"} >"$work/cand_setup.log" 2>&1)
   cand_setup=$?
   if [ "$ref_setup" != "$cand_setup" ]; then
@@ -132,7 +124,7 @@ run_compare_meson() {
   if [ -f "$src/skip-edge-count" ]; then
     skip_edges=1
   fi
-  ninja -C "$ref_build" >"$work/build.log" 2>&1
+  "$ref_ninja" -C "$ref_build" >"$work/build.log" 2>&1
   ref_build_exit=$?
   "$GLUON_NINJA" -C "$cand_build" >"$work/cand_build.log" 2>&1
   cand_build_exit=$?
@@ -210,7 +202,7 @@ run_compare_meson() {
     fi
     i=$((i+1))
   done
-  ninja -C "$ref_build" >"$work/noop.log" 2>&1
+  "$ref_ninja" -C "$ref_build" >"$work/noop.log" 2>&1
   ref_noop=$?
   "$GLUON_NINJA" -C "$cand_build" >"$work/cand_noop.log" 2>&1
   cand_noop=$?
@@ -230,7 +222,7 @@ run_compare_meson() {
     ref_dest="$work/dest"
     cand_dest="$cand_work/dest"
     rm -rf "$ref_dest" "$cand_dest"
-    DESTDIR="$ref_dest" ninja -C "$ref_build" install >"$work/install.log" 2>&1
+    DESTDIR="$ref_dest" "$ref_ninja" -C "$ref_build" install >"$work/install.log" 2>&1
     ref_install=$?
     DESTDIR="$cand_dest" "$GLUON_NINJA" -C "$cand_build" install >"$work/cand_install.log" 2>&1
     cand_install=$?
@@ -276,7 +268,7 @@ run_compare_ninja() {
     cp "$f" "$work/"
     cp "$f" "$cand_work/"
   done
-  ninja -C "$work" >"$work/build.log" 2>&1
+  "$ref_ninja" -C "$work" >"$work/build.log" 2>&1
   ref_build_exit=$?
   "$GLUON_NINJA" -C "$cand_work" >"$work/cand_build.log" 2>&1
   cand_build_exit=$?
@@ -295,7 +287,7 @@ run_compare_ninja() {
     diff "$work/files.txt" "$work/cand_files.txt" >>"$TMPBASE/results.log" || true
     return 1
   fi
-  ninja -C "$work" >"$work/noop.log" 2>&1
+  "$ref_ninja" -C "$work" >"$work/noop.log" 2>&1
   ref_noop=$?
   "$GLUON_NINJA" -C "$cand_work" >"$work/cand_noop.log" 2>&1
   cand_noop=$?

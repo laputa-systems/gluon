@@ -6,8 +6,11 @@ artifacts (bytes, or symbols/install names for linked binaries where
 timestamps/paths differ), the command set after normalizing paths and
 argument order where order is not semantic, no-op and touch-rebuild
 behavior (which edges rerun), and exit codes. Normalization rules live in
-`tests/differential/` and are tested. Upstream Meson 1.12.1 is the oracle;
-Muon is informational.
+`tests/differential/` and are tested. The harness resolves Meson and Ninja from `PATH` once and checks their
+versions against [`tests/upstream/PINS`](../tests/upstream/PINS). It
+rejects executables that match the gluon candidates and stops if the
+reference setup reports `oxidized-meson`. Put the pinned upstream tools
+first on `PATH` before running the corpus.
 
 The expected-fail ledger (`tests/differential/expected-fail`) lists
 fixtures known to diverge, one per line with a one-line cause. The harness
