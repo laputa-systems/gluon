@@ -70,16 +70,19 @@ fn run(opts: &cli::Options) -> Result<u8, String> {
     // output of an edge, run just that edge; when it actually executed,
     // reparse and build against the new manifest.
     if state.producers.contains_key(&opts.manifest_file) {
-        let report = build::run_targets(
+        let (code, work) = build::run_selection(
             &state,
             opts,
             Some(std::slice::from_ref(&opts.manifest_file)),
             false,
         )?;
-        if report.code != 0 {
-            return Ok(report.code);
+        if code != 0 {
+            return Ok(code);
         }
-        if report.ran {
+        if work {
+            if opts.dry_run {
+                return Ok(0);
+            }
             state = manifest::parse_file(&opts.manifest_file)
                 .map_err(|e| format!("{}: {}", opts.manifest_file, e))?;
         }

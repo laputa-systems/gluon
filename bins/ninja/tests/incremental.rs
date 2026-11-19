@@ -338,3 +338,29 @@ default output
     }
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn dry_run_stops_after_previewing_manifest_regeneration() {
+    let dir = scratch("dry-run-manifest");
+    let manifest = r"rule regenerate
+  command = cp template build.ninja
+  generator = 1
+rule produce
+  command = touch $out
+build build.ninja: regenerate template
+build output: produce
+default output
+";
+    write_source(&dir.join("build.ninja"), manifest, 1_700_000_000);
+    write_source(&dir.join("template"), manifest, 1_700_000_001);
+    let result = run(&dir, &["-n"]);
+    assert!(result.status.success(), "{result:?}");
+    assert_eq!(result.stdout, b"[1/1] cp template build.ninja\n");
+    assert_eq!(
+        fs::metadata(dir.join("build.ninja")).unwrap().modified().unwrap(),
+        UNIX_EPOCH + Duration::from_secs(1_700_000_000)
+    );
+    assert!(!dir.join("output").exists());
+    assert!(!dir.join(".ninja_log").exists());
+    fs::remove_dir_all(dir).unwrap();
+}

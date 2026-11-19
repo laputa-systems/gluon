@@ -50,6 +50,19 @@ pub fn run_targets(
     targets_override: Option<&[String]>,
     announce_no_work: bool,
 ) -> Result<RunReport, String> {
+    let (code, work) = run_selection(state, opts, targets_override, announce_no_work)?;
+    Ok(RunReport {
+        code,
+        ran: work && !opts.dry_run,
+    })
+}
+
+pub(crate) fn run_selection(
+    state: &State,
+    opts: &Options,
+    targets_override: Option<&[String]>,
+    announce_no_work: bool,
+) -> Result<(u8, bool), String> {
     let targets = match targets_override {
         Some(t) => t.to_vec(),
         None => resolve_targets(state, opts),
@@ -58,10 +71,7 @@ pub fn run_targets(
         if !opts.quiet && announce_no_work {
             println!("ninja: no work to do.");
         }
-        return Ok(RunReport {
-            code: 0,
-            ran: false,
-        });
+        return Ok((0, false));
     }
     // Surface unknown explicit targets the way ninja does — an error to
     // stdout, exit 1. Source files (no producer) are accepted only when
@@ -75,7 +85,7 @@ pub fn run_targets(
             });
             if !known {
                 println!("ninja: error: unknown target '{t}'");
-                return Ok(RunReport { code: 1, ran: false });
+                return Ok((1, false));
             }
         }
     }
@@ -88,48 +98,20 @@ pub fn run_targets(
         if !opts.quiet && announce_no_work {
             println!("ninja: no work to do.");
         }
-        return Ok(RunReport {
-            code: 0,
-            ran: false,
-        });
+        return Ok((0, false));
     }
 
     let real_count = plan.iter().filter(|&&i| !state.edges[i].is_phony()).count();
-    if opts.dry_run {
-        let mode = Mode::detect();
-        let _ = mode;
-        let mut n = 0usize;
-        let total = real_count;
-        for &edge_idx in &plan {
-            let edge = &state.edges[edge_idx];
-            if edge.is_phony() {
-                continue;
-            }
-            n += 1;
-            if !opts.quiet {
-                println!("[{n}/{total}] command");
-            }
-        }
-        if n == 0 && !opts.quiet {
-            println!("ninja: no work to do.");
-        }
-        return Ok(RunReport { code: 0, ran: false });
-    }
     let mode = Mode::detect();
     let mut status = Status::new(mode, opts.quiet, opts.verbose, real_count);
-    let (result, ran) = schedule(
+    schedule(
         state,
         opts,
         &plan,
         &producers,
         &mut status,
         announce_no_work,
-    )?;
-    if result == 0 && real_count == 0 && !opts.quiet {
-        // All edges in the plan turned out to be phony — preserve the
-        // legacy "no work to do" message.
-    }
-    Ok(RunReport { code: result, ran })
+    )
 }
 
 struct BuildPlan<'a> {
@@ -329,7 +311,7 @@ fn schedule(
     // user did *not* pass `-j N` explicitly — `-j N` always wins,
     // matching reference ninja. A pipe-mode jobserver is rejected
     // with a friendly stderr warning and we fall back to local `-j`.
-    let mut jobserver_client = if opts.jobs.is_none() {
+    let mut jobserver_client = if !opts.dry_run && opts.jobs.is_none() {
         match jobserver::detect_from_env() {
             Ok(c) => c,
             Err(msg) => {
@@ -402,6 +384,8 @@ fn schedule(
     // every edge in the plan was skipped (clean / phony) we still owe
     // the user the canonical "ninja: no work to do." message.
     let mut any_real_work = false;
+    let mut preview = Vec::new();
+    let mut preview_failure = None;
     // Per-edge mutable copies so dyndep merges (extra outputs/inputs)
     // can land on the right edge before dispatch.
     let mut edges: Vec<Edge> = state.edges.to_vec();
@@ -422,7 +406,7 @@ fn schedule(
     // still triggers a rebuild today, then keep a writer open to append
     // fresh entries as edges complete.
     let prev_log = log::load(".ninja_log");
-    let mut log_writer = log::Writer::new(".ninja_log");
+    let mut log_writer = (!opts.dry_run).then(|| log::Writer::new(".ninja_log"));
     // Cross-invocation depfile cache. After a successful gcc/msvc edge
     // we store its discovered headers here and unlink the depfile, so
     // the next ninja invocation can answer "is this output stale?"
@@ -566,9 +550,13 @@ fn schedule(
                         continue;
                     }
                     if !dyndep_loaded.contains(&edge_idx) {
-                        dyndep_failure =
-                            Some(format!("error: loading '{path}': dyndep file is missing"));
-                        break;
+                        if opts.dry_run {
+                            preview_failure.get_or_insert_with(|| (preview.len(), path.clone()));
+                        } else {
+                            dyndep_failure =
+                                Some(format!("error: loading '{path}': dyndep file is missing"));
+                            break;
+                        }
                     }
                 }
                 // Pool capacity check. Only real (non-phony) edges
@@ -629,10 +617,14 @@ fn schedule(
                 }
                 let restat = rule_has_restat(state, &edge);
                 let needs = edge_needs_run(state, &edge, &dirty, &phony_mtimes, &prev_log, restat);
-                if !needs {
+                if !needs || opts.dry_run {
+                    if needs {
+                        let (_, shown) = describe_command(state, &edge, opts)?;
+                        preview.push(shown);
+                    }
                     started[slot] = true;
                     for o in edge.outputs.iter().chain(&edge.implicit_outputs) {
-                        dirty.insert(o.clone(), false);
+                        dirty.insert(o.clone(), needs);
                     }
                     done[slot] = true;
                     dyndep_producer_completed_inline |= pending_dyndep_producers.contains(&edge_idx);
@@ -853,7 +845,9 @@ fn schedule(
                             mtime_ns: recorded_ns,
                             command_hash: outcome.command_hash,
                         };
-                        log_writer.record(std::slice::from_ref(out), &entry);
+                        if let Some(writer) = &mut log_writer {
+                            writer.record(std::slice::from_ref(out), &entry);
+                        }
                     }
                     // For `deps = gcc|msvc` edges: parse the freshly
                     // dropped depfile, persist the discovered headers
@@ -911,6 +905,22 @@ fn schedule(
         }
     }
 
+    if opts.dry_run {
+        let mut status = Status::new(Mode::detect(), opts.quiet, opts.verbose, preview.len());
+        let (visible, missing) = match &preview_failure {
+            Some((visible, path)) => (*visible, Some(path)),
+            None => (preview.len(), None),
+        };
+        for shown in &preview[..visible] {
+            status.build_finished(shown, &[]);
+        }
+        status.finish();
+        if let Some(path) = missing {
+            println!("ninja: build stopped: loading '{path}': No such file or directory.");
+            return Ok((1, visible != 0));
+        }
+        any_real_work = visible != 0;
+    }
     status.finish();
     if interrupted {
         println!("ninja: build stopped: interrupted by user.");
@@ -1132,7 +1142,7 @@ struct Prepared {
     rspfile: Option<(String, String)>,
 }
 
-fn prepare(state: &State, edge: &Edge, opts: &Options) -> Result<Prepared, String> {
+fn describe_command(state: &State, edge: &Edge, opts: &Options) -> Result<(String, String), String> {
     let rule = state
         .rules
         .get(&edge.rule)
@@ -1156,7 +1166,12 @@ fn prepare(state: &State, edge: &Edge, opts: &Options) -> Result<Prepared, Strin
     } else {
         description
     };
+    Ok((command, shown))
+}
 
+fn prepare(state: &State, edge: &Edge, opts: &Options) -> Result<Prepared, String> {
+    let (command, shown) = describe_command(state, edge, opts)?;
+    let rule = &state.rules[&edge.rule];
     // Output and depfile parent dirs are created up-front so commands can
     // assume the output directory exists. Matches
     // `test_depfile_directory_creation`.
