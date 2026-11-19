@@ -60,6 +60,15 @@ pub fn lookup_either(edge: &Edge, rule: &crate::graph::Rule, key: &str) -> Optio
         .cloned()
 }
 
+pub(crate) fn is_generator(state: &State, edge: &Edge) -> bool {
+    state
+        .rules
+        .get(&edge.rule)
+        .and_then(|rule| edge_binding(state, edge, rule, "generator"))
+        .or_else(|| state.bindings.get("generator").cloned())
+        .is_some_and(|value| !value.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
