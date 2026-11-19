@@ -1,18 +1,40 @@
 # Testing
 
-Parity is observable behavior, not text. A differential fixture passes when,
-against the reference (Meson 1.12.1 / Ninja 1.13.2), it matches: output
-artifacts (bytes, or symbols/install names for linked binaries where
-timestamps/paths differ), the command set after normalizing paths and
-argument order where order is not semantic, no-op and touch-rebuild
-behavior (which edges rerun), and exit codes. Normalization rules live in
-`tests/differential/` and are tested. Upstream Meson 1.12.1 is the oracle;
-Muon is informational.
+The differential harness resolves Meson and Ninja from `PATH` once and
+checks their versions against [`tests/upstream/PINS`](../tests/upstream/PINS).
+It rejects executables that match the gluon candidates and stops if the
+reference setup reports `oxidized-meson`. Put the pinned upstream tools
+first on `PATH` before running the corpus.
+
+For successful Ninja fixtures, the harness compares file contents. After
+each successful Meson or Ninja build, the second Ninja invocation must
+exit successfully without executing an edge. `make test-ci` exercises
+the file and idle checks with injected failures.
+For linked binaries and archives compared by symbols, the harness reads
+defined global symbols in portable `nm` format. Archive member headings
+are ignored, and an extraction error fails the fixture.
 
 The expected-fail ledger (`tests/differential/expected-fail`) lists
 fixtures known to diverge, one per line with a one-line cause. The harness
 fails on any unlisted mismatch and on any listed fixture that now passes.
-The ledger is empty.
+The ledger is empty. Setup and build must exit zero on both sides unless
+the fixture declares the expected status in `setup-exit` or `build-exit`.
+Intentional failure fixtures cover a missing install script and a missing
+Ninja input.
+
+Meson fixtures with `requires-pkg-config` are reported as skipped when
+their listed dependencies are unavailable. For a full run, provide zlib,
+wayland-client, wayland-protocols and the Wayland scanner. The Alpine
+3.24.2 run used `zlib-dev`, `wayland-dev` and `wayland-protocols`.
+Check `.work/tmp/diff/results.log` for skips before recording full
+coverage.
+
+The macOS CI job builds both release binaries and runs
+`bash tests/differential/run-macos.sh`. The script verifies the pinned
+Meson wheel and upstream Ninja archive before using them. It accepts a
+skip only for the two Wayland fixtures. For a local run, use Python 3.10
+or newer and build the binaries with
+`cargo build --release --locked -p gluon-meson -p gluon-ninja`.
 
 Gates, narrowest first:
 

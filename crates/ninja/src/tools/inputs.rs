@@ -57,9 +57,9 @@ fn parse_args(args: &[String]) -> Result<Args, String> {
     let mut a = Args::default();
     for arg in args {
         match arg.as_str() {
-            "--dependency-order" => a.dependency_order = true,
-            "--no-shell-escape" => a.no_shell_escape = true,
-            "--print0" => a.print0 = true,
+            cli_long_dependency_order!() => a.dependency_order = true,
+            cli_long_no_shell_escape!() => a.no_shell_escape = true,
+            cli_long_print0!() => a.print0 = true,
             s if s.starts_with('-') => return Err(format!("inputs: unknown flag {s}")),
             _ => a.targets.push(arg.clone()),
         }
@@ -138,4 +138,14 @@ fn shell_quote(s: String) -> String {
     }
     out.push('\'');
     out
+}
+
+#[cfg(test)]
+mod help_example_test {
+    #[test]
+    fn example_reaches_tool_parser() {
+        let args = crate::help::example_args("inputs");
+        let parsed = super::parse_args(&args).unwrap();
+        assert_eq!(parsed.targets, ["app"]);
+    }
 }

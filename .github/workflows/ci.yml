@@ -2,6 +2,8 @@ name: CI
 
 on:
   pull_request:
+  push:
+    branches: [main]
 
 permissions: {}
 
@@ -29,4 +31,11 @@ jobs:
       - name: Install Rust toolchain
         run: rustup show
       - name: Test
-        run: cargo test --profile dist --locked
+        run: make test-ci
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14.10'
+      - name: Build differential binaries
+        run: cargo build --release --locked --package gluon-meson --package gluon-ninja
+      - name: Test upstream build parity
+        run: bash tests/differential/run-macos.sh

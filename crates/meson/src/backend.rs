@@ -23,6 +23,7 @@ pub struct Toolchain {
     pub c: Vec<String>,
     pub cpp: Vec<String>,
     pub archiver: Vec<String>,
+    pub archiver_args: String,
 }
 
 impl Default for Toolchain {
@@ -31,6 +32,7 @@ impl Default for Toolchain {
             c: vec!["cc".to_string()],
             cpp: vec!["c++".to_string()],
             archiver: vec!["ar".to_string()],
+            archiver_args: "csr".to_string(),
         }
     }
 }
@@ -273,9 +275,10 @@ impl NinjaBackend {
         writeln!(out, "rule STATIC_LINKER").unwrap();
         writeln!(
             out,
-            "  command = {} --internal static-link $out -- {} csrD $out $in",
+            "  command = {} --internal static-link $out -- {} {} $out $in",
             quote_argument(&self.meson_command),
-            shell_escape_command(&self.toolchain.archiver)
+            shell_escape_command(&self.toolchain.archiver),
+            self.toolchain.archiver_args
         )
         .unwrap();
         writeln!(out, "  description = Linking static target $out").unwrap();
@@ -1220,11 +1223,21 @@ impl NinjaBackend {
         let options = &build_data.options;
         let language_key = if language == "c++" { "cpp" } else { language };
         let mut link_args = Vec::new();
-        link_args.push("-Wl,--as-needed".to_string());
-        if target.target_type == TargetType::SharedModule {
-            link_args.push("-Wl,--allow-shlib-undefined".to_string());
+        if cfg!(target_os = "macos") {
+            if matches!(
+                target.target_type,
+                TargetType::SharedLibrary | TargetType::SharedModule
+            ) {
+                link_args.push("-Wl,-dead_strip_dylibs".to_string());
+                link_args.push("-Wl,-headerpad_max_install_names".to_string());
+            }
         } else {
-            link_args.push("-Wl,--no-undefined".to_string());
+            link_args.push("-Wl,--as-needed".to_string());
+            if target.target_type == TargetType::SharedModule {
+                link_args.push("-Wl,--allow-shlib-undefined".to_string());
+            } else {
+                link_args.push("-Wl,--no-undefined".to_string());
+            }
         }
 
         match target.target_type {
@@ -1287,9 +1300,15 @@ impl NinjaBackend {
             .filter_map(Self::object_target_path)
             .collect();
         if !whole_archives.is_empty() {
-            link_args.push("-Wl,--whole-archive".to_string());
-            link_args.extend(whole_archives);
-            link_args.push("-Wl,--no-whole-archive".to_string());
+            if cfg!(target_os = "macos") {
+                for archive in whole_archives {
+                    link_args.push(format!("-Wl,-force_load,{archive}"));
+                }
+            } else {
+                link_args.push("-Wl,--whole-archive".to_string());
+                link_args.extend(whole_archives);
+                link_args.push("-Wl,--no-whole-archive".to_string());
+            }
         }
 
         if let Some(per_language) = build_data.project_link_args.get(&target.project_name) {
@@ -1598,6 +1617,9 @@ fn absolute_library_inputs(args: &[String]) -> Vec<String> {
 }
 
 fn group_libraries(args: Vec<String>) -> Vec<String> {
+    if cfg!(target_os = "macos") {
+        return args;
+    }
     let is_library = |argument: &str| {
         if argument.starts_with("-Wl,") {
             return argument.starts_with("-Wl,-l");

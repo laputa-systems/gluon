@@ -15,7 +15,7 @@ defaults:
 
 env:
   CARGO_INCREMENTAL: 0
-  MUSL_IMAGE: ghcr.io/joshuarli/musl-toolchain@sha256:a9802a6f0658ad344fd6b2577891194019ab86de1a4d494e32c9bbec820e863e
+  MUSL_IMAGE: ghcr.io/joshuarli/musl-toolchain@sha256:8a372c6a873b7613987fecc1102f68fb16f4fc4e607432adad924dc1506eae54
 
 jobs:
   preflight:
@@ -422,14 +422,16 @@ jobs:
 
       - name: Package release artifacts
         run: |
-          mkdir -p dist/zips
+          mkdir -p dist/archives
+          export LC_ALL=C
           for dir in dist/gluon-*; do
             name=$(basename "$dir")
             chmod +x "$dir/meson" "$dir/ninja" "$dir/gluon-build"
-            zip -9 --junk-paths "dist/zips/$name.zip" "$dir"/*
+            members=("$dir"/*)
+            tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cJf "dist/archives/$name.tar.xz" -C "$dir" "${members[@]##*/}"
           done
-          cd dist/zips
-          sha256sum *.zip | LC_ALL=C sort -k2 > SHA256SUMS
+          cd dist/archives
+          sha256sum *.tar.xz | LC_ALL=C sort -k2 > SHA256SUMS
           sha256sum -c SHA256SUMS
           ls -la
 
@@ -474,4 +476,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: release-${{ github.sha }}
-        run: gh release create "$RELEASE_TAG" dist/zips/*.zip dist/zips/SHA256SUMS --repo "$GITHUB_REPOSITORY" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --title "$RELEASE_TAG"
+        run: gh release create "$RELEASE_TAG" dist/archives/*.tar.xz dist/archives/SHA256SUMS --repo "$GITHUB_REPOSITORY" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md" --verify-tag --title "$RELEASE_TAG"

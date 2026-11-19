@@ -4002,53 +4002,7 @@ fn builtin_get_option(vm: &mut VM, args: &[CallArg]) -> Result<Object, String> {
         return Ok(val.clone());
     }
 
-    // Return defaults for well-known options
-    match name.as_str() {
-        "prefix" | "bindir" | "libdir" | "libexecdir" | "includedir" | "datadir" | "mandir"
-        | "infodir" | "localedir" | "sysconfdir" | "localstatedir" | "sharedstatedir"
-        | "sbindir" | "licensedir" => Ok(Object::String(crate::options::builtin_string(
-            &vm.options,
-            &name,
-        ))),
-        "buildtype" => Ok(Object::String("debug".to_string())),
-        "debug" => Ok(Object::Bool(crate::options::effective_debug(&vm.options))),
-        "optimization" => Ok(Object::String(crate::options::effective_optimization(
-            &vm.options,
-        ))),
-        "warning_level" => Ok(Object::String("1".to_string())),
-        "werror" => Ok(Object::Bool(false)),
-        "default_library" => Ok(Object::String("shared".to_string())),
-        "b_staticpic" => Ok(Object::Bool(true)),
-        "b_pie" => Ok(Object::Bool(false)),
-        "b_lto" => Ok(Object::Bool(false)),
-        "b_pch" => Ok(Object::Bool(true)),
-        "b_sanitize" => Ok(Object::String("none".to_string())),
-        "b_coverage" => Ok(Object::Bool(false)),
-        "b_pgo" => Ok(Object::String("off".to_string())),
-        "b_ndebug" => Ok(Object::String("false".to_string())),
-        "strip" => Ok(Object::Bool(false)),
-        "unity" => Ok(Object::String("off".to_string())),
-        "unity_size" => Ok(Object::Int(4)),
-        "layout" => Ok(Object::String("mirror".to_string())),
-        "wrap_mode" => Ok(Object::String("default".to_string())),
-        "pkg_config_path" => Ok(Object::Array(Vec::new())),
-        "cmake_prefix_path" => Ok(Object::Array(Vec::new())),
-        "auto_features" => Ok(Object::Feature(FeatureState::Auto)),
-        "backend" => Ok(Object::String("ninja".to_string())),
-        "install_umask" => Ok(Object::String("0022".to_string())),
-        "stdsplit" => Ok(Object::Bool(true)),
-        "errorlogs" => Ok(Object::Bool(true)),
-        "c_args" | "cpp_args" | "c_link_args" | "cpp_link_args" | "rust_args" | "objc_args"
-        | "objcpp_args" => Ok(Object::Array(Vec::new())),
-        "c_std" | "cpp_std" => Ok(Object::String("none".to_string())),
-        "cpp_eh" => Ok(Object::String("default".to_string())),
-        "cpp_rtti" => Ok(Object::Bool(true)),
-        "prefer_static" => Ok(Object::Bool(false)),
-        "b_lundef" => Ok(Object::Bool(true)),
-        "b_asneeded" => Ok(Object::Bool(true)),
-        "b_colorout" => Ok(Object::String("always".to_string())),
-        _ => Err(format!("Tried to access unknown option '{}'", name)),
-    }
+    crate::options::builtin_default(&name, &vm.options)
 }
 
 fn builtin_configuration_data(_vm: &mut VM, args: &[CallArg]) -> Result<Object, String> {

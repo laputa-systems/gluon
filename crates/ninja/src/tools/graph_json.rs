@@ -92,7 +92,7 @@ fn emit_edge(state: &State, edge: &Edge, out: &mut String) {
     let rspfile = lookup(state, edge, rule, "rspfile", true);
     let rspfile_content = lookup(state, edge, rule, "rspfile_content", true);
     let pool = lookup(state, edge, rule, "pool", false);
-    let restat = lookup(state, edge, rule, "restat", false)
+    let restat = lookup(state, edge, rule, cli_command_restat!(), false)
         .map(|v| truthy(&v))
         .unwrap_or(false);
     let generator = lookup(state, edge, rule, "generator", false)
@@ -107,7 +107,7 @@ fn emit_edge(state: &State, edge: &Edge, out: &mut String) {
     out.push_str(&format!("      \"phony\": {phony},\n"));
     arr(out, "outputs", &edge.outputs);
     arr(out, "implicit_outputs", &edge.implicit_outputs);
-    arr(out, "inputs", &edge.inputs);
+    arr(out, cli_command_inputs!(), &edge.inputs);
     arr(out, "implicit_inputs", &edge.implicit_inputs);
     arr(out, "order_only_inputs", &edge.order_only_inputs);
     strfield(out, "command", &command);
