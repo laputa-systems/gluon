@@ -1,9 +1,8 @@
-# TODO
-
 Prefix: GLU
 Next: 29
 
 ### GLU-19 · P3 · shared libraries have no symbol-extractor edge
+
 - **Area:** meson
 - **Where:** `crates/meson/src/backend.rs`, `tests/differential/fixtures/meson/shared-args/skip-edge-count`
 - **Problem:** Meson 1.12.1 adds a `SHSYM` edge per shared library so relinks skip dependents whose exported symbols did not change; gluon emits none, so the `gnu-symbol-visibility` and `shared-args` fixtures skip the edge-count comparison.
@@ -12,6 +11,7 @@ Next: 29
 - **Effort:** M
 
 ### GLU-20 · P3 · install accepts options it does not apply
+
 - **Area:** meson
 - **Where:** `crates/meson/src/cli.rs`, `crates/meson/src/install.rs`
 - **Problem:** `meson install --tags` and `--skip-subprojects` are parsed and silently ignored, and `configure_file`'s `install_mode` never reaches the install plan, so those installs get default modes.
@@ -20,6 +20,7 @@ Next: 29
 - **Effort:** S
 
 ### GLU-21 · P3 · shared-library aliases are missing from the build directory
+
 - **Area:** meson
 - **Where:** `crates/meson/src/backend.rs`, `crates/meson/src/install.rs`
 - **Problem:** Meson creates `libfoo.so`/`libfoo.dylib` and `libfoo.so.<soversion>` symlinks in the build directory at setup (`generate_shlib_aliases`). gluon creates them only in the install plan, so build-tree consumers that open the unversioned name fail and `intro-installed.json` and `build all` disagree with Meson about the build outputs.
@@ -28,6 +29,7 @@ Next: 29
 - **Effort:** S
 
 ### GLU-22 · P3 · install does not rewrite dependent load paths
+
 - **Area:** meson
 - **Where:** `crates/meson/src/install.rs`
 - **Problem:** ELF RPATH/RUNPATH is rewritten in process and `install_name_tool -id` is applied to installed dylibs, but Meson also runs `install_name_tool -change` from `get_link_deps_mapping()` for build targets the library links. A macOS library that links another target of the same project keeps the build-tree install name after install.
@@ -36,6 +38,7 @@ Next: 29
 - **Effort:** M
 
 ### GLU-23 · P3 · pkgconfig ignores library targets in requires
+
 - **Area:** meson
 - **Where:** `crates/meson/src/modules/pkgconfig.rs`
 - **Problem:** Meson maps a library target passed to `requires`/`requires_private` to the `filebase` of the `.pc` generated for it (and errors otherwise). gluon only handles strings and dependency objects, silently dropping library objects.
@@ -44,6 +47,7 @@ Next: 29
 - **Effort:** M
 
 ### GLU-24 · P3 · uninstalled pkgconfig file is approximate
+
 - **Area:** meson
 - **Where:** `crates/meson/src/modules/pkgconfig.rs`
 - **Problem:** the `meson-uninstalled/*-uninstalled.pc` Cflags are derived from each target's `include_directories` plus subdir. Meson builds them from `IncludeDirs.incdirs` plus `extra_build_dirs` for every processed library and nested link target, so paths that come from implicit or dependency include directories can be missing.
@@ -52,17 +56,10 @@ Next: 29
 - **Effort:** S
 
 ### GLU-26 · P3 · find_library with dirs skips the link check and system directories
+
 - **Area:** meson
 - **Where:** `crates/meson/src/compilers.rs` (`find_library`)
 - **Problem:** with `dirs:` Meson tries each naming pattern in the given directories and then in the compiler's system library directories, and link-checks each candidate (except static-only requests). gluon only checks whether the file exists in `dirs` and returns the first match, so a library present only in a system directory is reported missing, and a file that does not link is accepted.
 - **Recommendation:** Mirror `_find_library_real`: search `extra_dirs` followed by `get_library_dirs()` and probe candidates by linking a shared library.
-- **Fix with:** reference-parity
-- **Effort:** M
-
-### GLU-28 · P2 · differential harness cannot gate macOS builds
-- **Area:** tests
-- **Where:** `tests/differential/run.sh`; `tests/differential/fixtures/meson/shlib-static-deps`
-- **Problem:** On macOS the differential harness fails every fixture, so it has stopped being a gate. (1) Symbol comparison assumes GNU `nm` output: Mach-O `nm` prints per-file headers and paths that leak into the awk extraction, so every executable/shared-library fixture reports a symbol mismatch. (2) Nothing distinguishes the oxidized meson that lands on `PATH` (e.g. `~/.local/bin/meson` resolving to a gluon build) from the genuine upstream reference, so such hosts compare gluon against itself. (3) The `expected-fail` ledger is empty and CI runs only `cargo test`, so the harness has been red-or-useless on macOS since at least the 7fb279a port and the shared-library link defect shipped unnoticed (play hit it cold after a deps-cache miss).
-- **Recommendation:** Teach the harness Mach-O symbol extraction (or gate symbol comparison to ELF), detect and warn when the reference `meson` reports oxidized output, and pin the reference toolchain (Homebrew or a dedicated venv) when running on macOS. Wire the harness into macOS CI, or stop calling it a gate. The `shlib-static-deps` fixture (#14) is the regression case to keep.
 - **Fix with:** reference-parity
 - **Effort:** M
