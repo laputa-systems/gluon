@@ -6,6 +6,7 @@ lint:
 test: test-ci
 
 test-ci:
+	bash tests/differential/test-references.sh
 	cargo test --profile dist --locked
 
 clean:
