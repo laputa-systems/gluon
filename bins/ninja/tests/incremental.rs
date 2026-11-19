@@ -40,6 +40,41 @@ fn write_source(path: &Path, contents: &str, seconds: u64) {
 }
 
 #[test]
+fn keep_going_blocks_failed_edge_dependents() {
+    for limit in ["0", "2"] {
+        let dir = scratch("failed-dependency");
+        fs::write(
+            dir.join("build.ninja"),
+            "rule fail\n  command = printf partial > bad; exit 1\nrule copy\n  command = cp $in $out\nrule good\n  command = printf good > $out\nbuild bad: fail\nbuild consumed: copy bad\nbuild alias: phony bad\nbuild transitive: copy alias\nbuild good: good\ndefault consumed transitive good\n",
+        )
+        .unwrap();
+        let result = run(&dir, &["-j2", "-k", limit]);
+        assert_eq!(result.status.code(), Some(1), "{result:?}");
+        assert_eq!(fs::read_to_string(dir.join("bad")).unwrap(), "partial");
+        assert_eq!(fs::read_to_string(dir.join("good")).unwrap(), "good");
+        assert!(!dir.join("consumed").exists(), "{result:?}");
+        assert!(!dir.join("transitive").exists(), "{result:?}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[test]
+fn failed_dyndep_producer_does_not_block_independent_dyndep() {
+    let dir = scratch("failed-dyndep");
+    fs::write(
+        dir.join("build.ninja"),
+        "rule fail\n  command = printf partial > $out; exit 1\nrule copy\n  command = cp $in $out\nrule touch\n  command = touch $out\nbuild bad.dd: fail\nbuild blocked: touch || bad.dd\n  dyndep = bad.dd\nbuild good.dd: copy template.dd\nbuild good: touch || good.dd\n  dyndep = good.dd\ndefault blocked good\n",
+    )
+    .unwrap();
+    fs::write(dir.join("template.dd"), "ninja_dyndep_version = 1\nbuild good: dyndep\n").unwrap();
+    let result = run(&dir, &["-j2", "-k", "0"]);
+    assert_eq!(result.status.code(), Some(1), "{result:?}");
+    assert!(!dir.join("blocked").exists(), "{result:?}");
+    assert!(dir.join("good").is_file(), "{result:?}");
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn clean_edge_does_not_hold_the_only_jobserver_token() {
     let dir = scratch("jobserver");
     let fifo = dir.join("fifo");

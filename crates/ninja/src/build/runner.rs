@@ -365,6 +365,7 @@ fn schedule(
 
     let mut done = vec![false; plan.len()];
     let mut started = vec![false; plan.len()];
+    let mut blocked = vec![false; plan.len()];
     let mut in_flight = 0usize;
     let (tx, rx) = mpsc::channel::<(EdgeOutcome, SystemTime)>();
     // We treat any non-zero exit as a "failure" and stop launching new
@@ -486,7 +487,10 @@ fn schedule(
             // "multiple rules generate X" collision is detected as
             // soon as the producing files exist on disk, and *before*
             // either consumer commits to running.
-            for &edge_idx in plan.iter() {
+            for (slot, &edge_idx) in plan.iter().enumerate() {
+                if blocked[slot] {
+                    continue;
+                }
                 if let Some(dd_path) = edges[edge_idx].dyndep.clone()
                     && !dyndep_loaded.contains(&edge_idx)
                     && state
@@ -525,12 +529,13 @@ fn schedule(
                 .filter_map(|p| state.producers.get(p))
                 .copied()
                 .filter(|prod| {
-                    in_plan.contains(prod) && idx_in_plan.get(prod).is_some_and(|s| !done[*s])
+                    in_plan.contains(prod)
+                        && idx_in_plan.get(prod).is_some_and(|s| !done[*s] && !blocked[*s])
                 })
                 .collect();
 
             for slot in 0..plan.len() {
-                if started[slot] || remaining[slot] > 0 {
+                if started[slot] || blocked[slot] || remaining[slot] > 0 {
                     continue;
                 }
                 if in_flight >= jobs {
@@ -761,7 +766,6 @@ fn schedule(
             {
                 c.release(slot_token);
             }
-            complete_slot(slot, &dependents, &mut done, &mut remaining);
             // Update dirty status for the outputs based on restat.
             let outputs_dirty = outcome.outputs.iter().any(|output| match output.mtime {
                 BeforeMtime::Observed(Some(before)) => mtime_of(&output.path) != Some(before),
@@ -781,6 +785,7 @@ fn schedule(
                 is_console_edge(state, &edges[plan[slot]]) && !edges[plan[slot]].is_phony();
             match outcome.kind {
                 OutcomeKind::Ok { combined } => {
+                    complete_slot(slot, &dependents, &mut done, &mut remaining);
                     if edge_was_console {
                         status.build_finished_console(&outcome.shown);
                     } else {
@@ -836,6 +841,16 @@ fn schedule(
                     }
                 }
                 OutcomeKind::Failed { code, combined } => {
+                    // A failed edge never releases its dependents. Mark the
+                    // subtree as blocked as well, so blocked dyndep producers
+                    // do not prevent independent metadata from being loaded.
+                    let mut pending = vec![slot];
+                    while let Some(failed) = pending.pop() {
+                        if !blocked[failed] {
+                            blocked[failed] = true;
+                            pending.extend(&dependents[failed]);
+                        }
+                    }
                     if edge_was_console {
                         // The child wrote any failure detail directly
                         // to the terminal; we still emit the
