@@ -162,6 +162,58 @@ The rebuilt ARM64 Linux binaries passed static ELF verification.
 Alpine passed all 58 fixtures, and macOS passed 56 with the two
 Wayland skips. Both fixture counts include three expected failures.
 
+Ninja dry runs now use the same readiness decisions as an executing
+build. The CLI regressions cover clean and dirty outputs, descriptions
+and verbose commands, quiet mode, response files, manifest regeneration
+and a generated dyndep file that does not yet exist. They pass on
+macOS ARM64 and ARM64 musl. The full differential corpus passed 56
+fixtures on macOS with two Wayland skips and all 58 on stable Alpine,
+including three expected failures on each platform. On a graph with
+100,000 cold edges, a dry run emitted the same 100,000 lines as pinned
+Ninja 1.13.2. Both directories still had no outputs or build logs.
+
+The scheduler now visits only each completed edge's direct dependents.
+On macOS ARM64, separate `cargo build --profile dist --locked -p
+gluon-ninja` targets built base `2785395` and candidate `7b24618`.
+Each warm comparison used the same directory for both sides, with one
+shared source, one `cp` output per edge, and matching v6 command log
+records. Both readiness checks exited zero. Each row alternated order
+over five pairs with `-j2`. Output bytes and the log hash stayed the
+same across all no-op invocations. Source and header rows used separate
+warmed trees for each invocation. A `cc -MMD` depfile tracked the
+header. Each edited tree recompiled once and the program's exit status
+changed from zero to seven.
+
+| Workload | Base median wall, ms (range) | Candidate median wall, ms (range) |
+| --- | ---: | ---: |
+| 1,000 clean edges | 10.41 (9.97–12.32) | 9.43 (9.17–11.78) |
+| 10,000 clean edges | 90.31 (88.10–93.67) | 36.38 (35.75–40.87) |
+| 100,000 clean edges | 5,732.21 (5,482.44–5,867.77) | 292.98 (287.59–308.76) |
+| One source rebuild | 66.75 (65.35–77.30) | 70.09 (65.37–81.03) |
+| One header rebuild | 60.79 (58.07–62.82) | 61.56 (54.19–65.13) |
+
+At 100,000 edges, median child CPU time was 5,690.54 ms and 281.44 ms.
+Peak RSS for the separate memory check was about 117.4 MiB on both
+sides. The stripped Ninja binary grew by 16 bytes. Source and header
+differences fall within the run-to-run ranges. Meson timing remains
+open. The existing benchmark script's dry-run count can accept
+different work and mask command failures. The Tests step must make
+that entry point verify equivalent work before using its timings.
+
+FFmpeg-build at `b9d9ce52` ran its actual `build_dav1d` entry point
+using the checksum-locked dav1d 1.5.4 archive, upstream Meson and a
+`PATH` override that traced the pinned reference and candidate Ninja
+binaries in separate build and install trees. Installed headers,
+ordered archive member names and every object hash matched. A program
+linked to each archive opened and closed a decoder and printed 1.5.4.
+Laputa's package proof fixture from `3bbdd993` ran its setup, build
+and install commands with `GLUON_SHELL=forbid` on Alpine 3.24.2
+ARM64. `PATH` resolved both commands to the static `dist` binaries
+built from `7b24618`. The warm preview reported no work, and the
+installed version and notes matched the fixture bytes. This covers
+the downstream command and artifact checks. Laputa's package manager
+and dynamic-loader checks were outside that fixture run.
+
 ## Tickets
 
 
@@ -208,14 +260,3 @@ Wayland skips. Both fixture counts include three expected failures.
 - **Recommendation:** Run the deslop Dead code step. Accept: tools clean or allowlisted with reasons; walk-backs filed as Needs owner tickets.
 - **Fix with:** deslop
 - **Effort:** M
-
-
-### DSLP-10 · P2 · Ninja dry runs report clean edges as commands
-
-- **Area:** Ninja CLI parity
-- **Where:** crates/ninja/src/build/runner.rs, bins/ninja/tests/incremental.rs
-- **Problem:** Build an ordinary copy rule once and then run the same target with -n. Pinned Ninja 1.13.2 reports no work. Gluon prints a placeholder command for the up-to-date edge. The dry-run branch bypasses command and input freshness and prints every real edge in the plan.
-- **Recommendation:** Use the real readiness decisions when simulating a dry run. Check clean, dirty, generated, quiet and response-file paths without executing commands or writing logs or response files.
-- **Fix with:** reference-parity
-- **Effort:** M
-
