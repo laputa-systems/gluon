@@ -1,5 +1,5 @@
 Prefix: GLU
-Next: 34
+Next: 41
 
 ### GLU-30 · P2 · wrap downloads skip source_hash and patch_hash
 
@@ -100,3 +100,65 @@ Next: 34
 - **Fix with:** single-source-of-truth
 - **Effort:** S
 
+### GLU-34 · P3 · Ninja depfile parsing corrupts UTF-8 and escaped hashes
+
+- **Area:** Ninja dependency paths
+- **Where:** crates/state/src/depfile.rs:63,84
+- **Problem:** Compile with cc -MMD and deps = gcc while including café.h or name#part.h. Both Gluon builds recompile on a warm invocation. Ninja 1.13.2 stays idle and recompiles after an actual edit. The parser converts UTF-8 a byte at a time and treats the escaped hash as a comment.
+- **Recommendation:** Preserve path bytes and consume Make depfile escapes before interpreting comments. Check a warm no-op and a header edit.
+- **Fix with:** reference-parity
+- **Effort:** M
+
+### GLU-35 · P3 · Meson target introspection omits custom targets
+
+- **Area:** Meson introspection
+- **Where:** crates/meson/src/backend.rs:92,1741
+- **Problem:** Declare custom_target('copy', output: 'data.out', command: [find_program('touch'), '@OUTPUT@']). Reference Meson includes copy in intro-targets.json. Gluon emits the Ninja target and returns an empty target array.
+- **Recommendation:** Generate entries for supported custom targets using the owning build data. Compare ID, outputs and type to pinned Meson.
+- **Fix with:** reference-parity
+- **Effort:** M
+
+### GLU-36 · P3 · Meson setup silently accepts malformed option files
+
+- **Area:** Meson option parsing
+- **Where:** crates/meson/src/options.rs:392, crates/meson/src/builtins/functions.rs:427
+- **Problem:** Use project('m') in meson.build and an unterminated option( in meson.options. Gluon setup exits zero. Meson 1.12.1 exits one and reports the unexpected end at meson.options:1:8.
+- **Recommendation:** Surface read and syntax failures with file and position. Preserve optional and valid option files.
+- **Fix with:** error-model
+- **Effort:** S
+
+### GLU-37 · P3 · decide whether to retire unused deps log recompaction API
+
+- **Area:** Needs owner · state public API
+- **Where:** crates/state/src/deps_log.rs:46,248,256; crates/ninja/src/build/mod.rs:5
+- **Problem:** The exported needs_recompaction field has no reader and remains false; recompact is called only by a unit test and close by that method and tests. Removing them changes the state crate API, also re-exported by ninja, and possible external consumers are unknown.
+- **Recommendation:** Decide whether consumers may lose these members; if so remove them and the recompact-only test, preserving the supported on-disk format.
+- **Fix with:** dead-code-archaeology
+- **Effort:** S
+
+### GLU-38 · P3 · measure verified end-to-end build journeys
+
+- **Area:** benchmark coverage
+- **Where:** tests/benchmarks/run.sh:57-79; crates/ninja/benches/ninja.rs:23
+- **Problem:** Component benchmarks use synthetic data and the CLI corpus lacks equivalent-work witnesses; no trusted workload covers real setup, reconfigure, no-op, source and header rebuilds or consumer-scale throughput and resource usage. Regressions in these journeys can escape measurement.
+- **Recommendation:** After DSLP-11, add pinned representative consumer journeys with output and completed-work checks, paired baselines and scoped CPU, memory and I/O measurements.
+- **Fix with:** refactor-benchmarks
+- **Effort:** L
+
+### GLU-39 · P3 · add attribution for build performance regressions
+
+- **Area:** benchmark observability
+- **Where:** tests/benchmarks/run.sh:30-42; crates/engine/benches/engine.rs:2
+- **Problem:** The suite reports elapsed time and limited process RSS or allocator counts but has no documented workload-tree CPU, allocation, I/O or trace attribution. A change in a benchmark cannot be localized reliably, and child peaks are not workload-tree peaks.
+- **Recommendation:** Document separate diagnostic runs using platform CPU sampling, allocation profiling and syscall or I/O tracing with operation boundaries, including scope and overhead.
+- **Fix with:** bench-pyramid
+- **Effort:** M
+
+### GLU-40 · P3 · meson.build changes do not regenerate build.ninja
+
+- **Area:** meson · backend
+- **Where:** crates/meson/src/backend.rs regeneration edge
+- **Problem:** The regeneration edge depends only on command-based configure_file inputs, so editing meson.build does not rerun setup on the next ninja invocation. Meson regenerates when any build definition file changes.
+- **Recommendation:** Add the processed meson.build and meson_options files to the regeneration edge inputs and test that editing meson.build regenerates once and then idles.
+- **Fix with:** reference-parity
+- **Effort:** S
