@@ -29,8 +29,21 @@ fn setup_child() {
             "meson".into(), "setup".into(), dir.join("build").to_string_lossy().into_owned(),
             dir.to_string_lossy().into_owned(),
         ]).run();
+        if code == 0 && let Some(wrapper) = std::env::var_os("GLUON_TEST_REGEN") {
+            use_regeneration_wrapper(&dir, &PathBuf::from(wrapper));
+        }
         std::process::exit(code);
     }
+}
+
+fn use_regeneration_wrapper(dir: &std::path::Path, wrapper: &std::path::Path) {
+    let build_file = dir.join("build/build.ninja");
+    let manifest = std::fs::read_to_string(&build_file).unwrap();
+    let (before, rule) = manifest.split_once("rule REGENERATE_BUILD\n").unwrap();
+    let (_, after) = rule.split_once('\n').unwrap();
+    assert!(rule.starts_with("  command = "));
+    let command = wrapper.to_string_lossy().replace('\'', "'\\''").replace('$', "$$");
+    std::fs::write(build_file, format!("{before}rule REGENERATE_BUILD\n  command = sh '{command}'\n{after}")).unwrap();
 }
 
 fn reject(source: &str, expected: &[&str]) {
@@ -82,17 +95,17 @@ fn captured_command_input_regenerates_before_default_target() {
     // The test executable hosts the candidate CLI. A wrapper lets Ninja invoke it
     // for regeneration in the same way it invokes the standalone Meson binary.
     let wrapper = dir.join("candidate-meson");
-    std::fs::write(&wrapper, format!("#!/bin/sh\nexec '{}' --exact setup_child --nocapture\n", std::env::current_exe().unwrap().display())).unwrap();
-    let status = Command::new("chmod").args(["+x", wrapper.to_str().unwrap()]).status().unwrap();
-    assert!(status.success());
-    let build_file = dir.join("build/build.ninja");
-    let manifest = std::fs::read_to_string(&build_file).unwrap();
-    std::fs::write(&build_file, manifest.replace(&std::env::current_exe().unwrap().to_string_lossy().to_string(), &wrapper.to_string_lossy())).unwrap();
+    let exe = std::env::current_exe().unwrap().to_string_lossy().replace('\'', "'\\''");
+    std::fs::write(&wrapper, format!("#!/bin/sh\nexec '{exe}' --exact setup_child --nocapture\n")).unwrap();
+    use_regeneration_wrapper(&dir, &wrapper);
 
-    let reference = dir.join("reference");
-    let output = Command::new("meson").args(["setup", reference.to_str().unwrap(), dir.to_str().unwrap()]).output().unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    for build in [reference.clone(), dir.join("build")] {
+    // Prefer the system Ninja over an older gluon release on PATH.
+    let ninja = ["/usr/bin/ninja", "/opt/homebrew/bin/ninja"].into_iter()
+        .find(|path| std::path::Path::new(path).is_file()).unwrap_or("ninja");
+
+    // Expected bytes are Meson 1.12.1's observed output (DSLP-20).
+    let builds = [dir.join("build")];
+    for build in &builds {
         assert_eq!(std::fs::read(build.join("configured")).unwrap(), b"FIRST");
     }
     for (input, expected) in [("first", b"FIRST".as_slice()), ("second", b"SECOND".as_slice())] {
@@ -100,8 +113,8 @@ fn captured_command_input_regenerates_before_default_target() {
             std::thread::sleep(std::time::Duration::from_millis(1100));
             std::fs::write(dir.join("data.in"), input).unwrap();
         }
-        for build in [reference.clone(), dir.join("build")] {
-            let output = Command::new("ninja").arg("-C").arg(&build).env("GLUON_TEST_SOURCE", &dir).output().unwrap();
+        for build in &builds {
+            let output = Command::new(ninja).arg("-C").arg(build).env("GLUON_TEST_SOURCE", &dir).env("GLUON_TEST_REGEN", &wrapper).output().unwrap();
             assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
             assert_eq!(std::fs::read(build.join("configured")).unwrap(), expected, "{} configured", build.display());
             assert_eq!(std::fs::read(build.join("copied")).unwrap(), expected, "{} copied", build.display());
