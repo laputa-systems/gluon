@@ -716,6 +716,9 @@ impl Cli {
     }
 
     fn cmd_setup(&self, args: &SetupArgs) -> i32 {
+        if args.reconfigure && Path::new(&args.build_dir).join("meson-private/cmd_line.txt").exists() {
+            return self.reconfigure(&args.build_dir, &args.options, args.cross_file.as_deref(), args.native_file.as_deref());
+        }
         let source_dir = std::fs::canonicalize(&args.source_dir)
             .unwrap_or_else(|_| PathBuf::from(&args.source_dir));
         let source_dir = source_dir.to_string_lossy().to_string();
@@ -1033,10 +1036,14 @@ impl Cli {
     }
 
     fn cmd_configure(&self, args: &ConfigureArgs) -> i32 {
+        self.reconfigure(&args.build_dir, &args.options, None, None)
+    }
+
+    fn reconfigure(&self, build_dir: &str, options: &[(String, String)], cross_file: Option<&str>, native_file: Option<&str>) -> i32 {
         // Re-read the saved command line and re-run setup with new options
-        let cmd_file = format!("{}/meson-private/cmd_line.txt", args.build_dir);
+        let cmd_file = format!("{}/meson-private/cmd_line.txt", build_dir);
         if !Path::new(&cmd_file).exists() {
-            eprintln!("Not a configured build directory: {}", args.build_dir);
+            eprintln!("Not a configured build directory: {}", build_dir);
             return 1;
         }
 
@@ -1058,15 +1065,15 @@ impl Cli {
         }
 
         // New options override
-        all_options.extend(args.options.clone());
+        all_options.extend_from_slice(options);
 
         self.cmd_setup(&SetupArgs {
             source_dir,
-            build_dir: args.build_dir.clone(),
+            build_dir: build_dir.to_string(),
             options: all_options,
-            cross_file: saved["cross_file"].as_str().filter(|path| !path.is_empty()).map(str::to_owned),
-            native_file: saved["native_file"].as_str().filter(|path| !path.is_empty()).map(str::to_owned),
-            reconfigure: true,
+            cross_file: cross_file.or_else(|| saved["cross_file"].as_str().filter(|path| !path.is_empty())).map(str::to_owned),
+            native_file: native_file.or_else(|| saved["native_file"].as_str().filter(|path| !path.is_empty())).map(str::to_owned),
+            reconfigure: false,
             wipe: false,
         })
     }
