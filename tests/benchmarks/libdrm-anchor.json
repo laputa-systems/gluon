@@ -1,0 +1,23 @@
+{
+  "commit": "799a897c74aae549f983e0303a1b5c1d812a1cd5",
+  "host": "Linux-7.2.9-2-stable-x86_64-with-musl1",
+  "date": "2026-11-20",
+  "metrics": {
+    "setup": {
+      "value": 0.3583004707470536,
+      "tolerance": 0.15
+    },
+    "build": {
+      "value": 0.7103506079874933,
+      "tolerance": 0.15
+    },
+    "noop": {
+      "value": 0.0007951939478516579,
+      "tolerance": 0.5
+    },
+    "incremental": {
+      "value": 0.6664817351847887,
+      "tolerance": 0.15
+    }
+  }
+}
