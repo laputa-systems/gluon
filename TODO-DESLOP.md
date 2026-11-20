@@ -5,6 +5,65 @@ Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/mai
 
 ## Report
 
+DSLP-1 named base `5d2169d1786659ec9da3d5f664c3a37df7d44405`; Ground
+measured `2a1bca45da57bc36da9a60e1666bd392c9fe011f` on macOS ARM64
+with nightly 2026-11-09. The deslop-labeled PRs from #10 through #53
+are merged. Open tickets DSLP-16, DSLP-17, DSLP-18, DSLP-21,
+DSLP-22, DSLP-23 and DSLP-25 are P3. DSLP-21 needs an owner decision
+on the public dependency-log API. No P1 or P2 tickets remain open.
+
+**Scorecard**
+
+The figures below come from the step records retained in this section,
+except where a different source is named. They describe the recorded
+revisions and workloads, not a new full-campaign measurement.
+
+| Measure | Before | After / disposition |
+| --- | --- | --- |
+| Rust lines in source and tests | `git ls-tree` and `git show` at DSLP-1: 31,974 physical lines in paths containing `/src/` and 40 in Rust test paths. | At `4300e0c5`, the same command counted 32,443 source and 830 test-path lines. Source counts include inline tests and comments. |
+| Warm `make test` | Ground: 4.81 s. | Tests step: 16.44 s after, 15.84 s before its test change. Busy-host observations; not a timing gate. |
+| Coverage | Tests step: 31.37% lines, 20.96% branches. | 31.52% lines, 21.19% branches; excludes the shell differential corpus. |
+| Bounded mutation trial | One `mark_depfile_dirty` comparison mutant survived. | Caught after the header rebuild assertion. Completed trials had no timeouts or unviable mutants; approximately 340 aggregate runner-seconds includes a failed baseline attempt. |
+| Escape hatches | Nine unsafe-code diagnostics in jobserver tests. Types census found 373 `unwrap_used`, 47 truncation and 23 sign-loss diagnostic sites, including tests. | Unsafe code forbidden across the workspace. The other counts are a census, not before-and-after counts. Total `allow`, unwrap and cast changes: Not measured. |
+| Dead code | Unused direct `regex-lite` dependency and five unnecessary suppressions. | Dependency and suppressions removed; 16 declarations narrowed. Public recompaction API decision remains DSLP-21. |
+| Findings | Diagnose filed DSLP-11 through DSLP-20. | P1 and P2 findings closed; the seven P3 tickets above remain. |
+| Performance | 100,000 clean edges: 5,732.21 ms median in the paired scheduler comparison. | 292.98 ms median on the candidate; five pairs, qualified readiness, matching output and logs. Broader representative journeys and attribution remain DSLP-22 and DSLP-23. |
+| Escaped regressions | Not measured. | Not measured. The bounded mutation survivor was a test gap, not a count of escaped regressions. |
+
+The tests now protect recorded-header rebuilds and idle repeats, failed-edge
+dependent blocking, missing dependency records, failed `configure_file`
+operations, and other boundaries recorded in [Verification](AGENTS.md#verification).
+That section predates the fixes for DSLP-12 through DSLP-14 and still calls
+those three cases unprotected.
+Differential fixtures check artifacts, exit status and idle builds against
+pinned tools; consumer checks remain separate.
+
+**Steps and cost**
+
+- Seed: #10. DSLP-1 through DSLP-5 were established; cost not measured.
+- Ground: #20. The empty-target suite took 278.19 s, the warm repeat
+  4.81 s, and Clippy 291.12 s under shared load.
+- Diagnose: #35 and #36. Dry-run readiness and reproduced findings were
+  recorded; total review cost not measured.
+- Types: #37, #38 and #40. Restat observations became typed and the
+  workspace forbids unsafe code; total cost not measured.
+- Tests: #43. Coverage and the bounded mutation trial are above; total
+  step cost not measured.
+- Dead code: #44. The dependency and suppressions were removed; total
+  step cost not measured.
+- Bench audit and entrypoint: #45. Edit controls took 0.65 s; the engine
+  Change workload took 129.84 s cold and 8.44 s warm on a busy host.
+- Findings: #46 DSLP-11, #47 DSLP-12, #48 DSLP-14, #49 DSLP-13,
+  #50 DSLP-15, #51 DSLP-20, #52 DSLP-19 and #53 DSLP-24. Total fix
+  cost not measured.
+
+Verification gaps: no full suite or benchmarks were run for this report.
+The installed `~/.local/bin/meson` and `~/.local/bin/ninja` are stale Gluon
+releases; tests must not depend on an external `meson` from that location.
+The mirror did not provide the mutation and coverage tools, and the broad
+performance corpus lacks verified representative journeys and attribution.
+The detailed records below preserve platform, consumer and fixture limits.
+
 Bench audit (2026-11-19): the Rustybench engine queue, graph interning and
 lookup, state logs/depfiles/snapshots, Meson lexer/parser and Ninja
 manifest/planner/expansion/hash workloads are synthetic component probes,
