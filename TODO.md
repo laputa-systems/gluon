@@ -1,15 +1,6 @@
 Prefix: GLU
 Next: 34
 
-### GLU-29 · P2 · ninja drops trailing whitespace from variable values, breaking CMake compiler launchers
-
-- **Area:** ninja
-- **Where:** `crates/ninja/src/manifest.rs` (variable value parsing)
-- **Problem:** Ninja keeps a variable value's trailing spaces, and CMake relies on it: build.ninja sets `LAUNCHER = /path/to/launcher ` and rules run `command = ${LAUNCHER}${CODE_CHECK}/usr/bin/c++ ...`. gluon's ninja (release dd4b9664d3319e7dc9d01bd895c72d57aa298244, aarch64-apple-darwin, reports 1.13.2) strips the space, so every CMake project configured with CMAKE_<LANG>_COMPILER_LAUNCHER fails with `ninja: failed to spawn: /path/to/launcher/usr/bin/c++: Not a directory (os error 20)`. Found building LLVM 21.1.8 with kache as the launcher. Minimal repro: `printf 'rule r\n  command = ${PRE}echo -n ok > $out\nbuild out1: r\n  PRE = env \n' > build.ninja && ninja` succeeds with Ninja 1.13 (runs `env echo -n ok`) and fails with gluon.
-- **Recommendation:** Preserve trailing whitespace in variable values as Ninja's lexer does (only leading whitespace after `=` is skipped), and add the repro above as a differential fixture.
-- **Fix with:** reference-parity
-- **Effort:** S
-
 ### GLU-30 · P2 · wrap downloads skip source_hash and patch_hash
 
 - **Area:** meson
