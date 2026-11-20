@@ -13,7 +13,7 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 TIERS = ('Edit', 'Change', 'Scenario', 'Full')
 WORK = {
-    'controls': ('Edit', 'harness', ['python3', 'tests/benchmarks/test_driver.py'], 'selection and preflight controls'),
+    'controls': ('Edit', 'harness', ['python3', '-m', 'unittest', 'discover', '-s', 'tests/benchmarks', '-p', 'test_*.py'], 'selection and preflight controls'),
     **{name: ('Change', name, ['cargo', 'bench', '--locked', '-p', name, '--bench', name], 'synthetic component measurements') for name in ('engine', 'graph', 'state', 'meson', 'ninja')},
     'cli-corpus': ('Scenario', 'cli', ['bash', 'tests/benchmarks/run.sh'], 'setup and incremental corpus'),
     'all-components': ('Full', 'components', ['cargo', 'bench', '--locked', '--workspace'], 'all component benchmarks'),
@@ -65,6 +65,7 @@ def main():
     run_dir = ROOT / '.work' / 'bench' / datetime.datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     run_dir.mkdir(parents=True)
     env = os.environ.copy()
+    env['PYTHONDONTWRITEBYTECODE'] = '1'
     env['TMPDIR'] = str(ROOT / '.work' / 'tmp')
     pathlib.Path(env['TMPDIR']).mkdir(parents=True, exist_ok=True)
     summary = [f'host: {platform.platform()}', f'commit: {subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()}', f'dirty: {bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT))}', 'timing: inconclusive; no qualified pre/post host gate; completion is not a performance verdict']
