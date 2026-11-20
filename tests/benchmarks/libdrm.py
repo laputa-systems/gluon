@@ -103,7 +103,7 @@ def gate(*args):
 def run_command(cmd):
     ready = gate()
     start = time.monotonic() if ready else None
-    result = subprocess.run(cmd, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env={**os.environ, 'NINJA_STATUS': '[%f/%t] '})
+    result = subprocess.run(cmd, cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env={**os.environ, 'NINJA_STATUS': '[%f/%t] ', 'CC': 'cc', 'CCACHE_DISABLE': '1'})
     elapsed = time.monotonic() - start if ready else None
     after = gate('-1')
     if result.returncode:
