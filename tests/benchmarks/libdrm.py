@@ -70,7 +70,16 @@ def reference(name, expected, candidate):
         raise RuntimeError(f'missing distinct reference {name}')
     if subprocess.check_output([path, '--version'], text=True).strip() != expected:
         raise RuntimeError(f'reference {name} version does not match {expected}')
+    if not upstream_tool(name, path):
+        raise RuntimeError(f'reference {name} is not the upstream implementation (an installed gluon?): {path}')
     return path
+
+
+def upstream_tool(name, path):
+    if name == 'meson':
+        return pathlib.Path(path).read_bytes()[:2] == b'#!'
+    listing = subprocess.run([path, '-t', 'list'], cwd=WORK, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    return listing.stdout.startswith('ninja subtools:')
 
 
 def source_archive(pin):
@@ -115,8 +124,8 @@ def main():
         parser.error('tolerance must be finite and nonnegative')
     pin = pins()
     gluon_meson, gluon_ninja = (ROOT / 'target/release' / name for name in ('meson', 'ninja'))
-    tools = {'ref': (reference('meson', pin['MESON_VERSION'], gluon_meson), reference('ninja', pin['NINJA_VERSION'], gluon_ninja)), 'gluon': (str(gluon_meson), str(gluon_ninja))}
     WORK.mkdir(parents=True, exist_ok=True)
+    tools = {'ref': (reference('meson', pin['MESON_VERSION'], gluon_meson), reference('ninja', pin['NINJA_VERSION'], gluon_ninja)), 'gluon': (str(gluon_meson), str(gluon_ninja))}
     archive = source_archive(pin)
     samples = {runner: {phase: [] for phase in PHASES} for runner in tools}
     qualified = True
