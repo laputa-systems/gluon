@@ -6,7 +6,7 @@ lint:
 test: test-ci
 
 test-ci:
-	python3 tests/benchmarks/test_driver.py
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/benchmarks -p 'test_*.py'
 	bash tests/differential/test-references.sh
 	bash tests/differential/test-symbols.sh
 	bash tests/differential/test-ninja-observables.sh

@@ -53,10 +53,9 @@ Gates, narrowest first:
   to verify static Linux musl artifacts on either architecture.
   `tests/upstream/musl.sh` checks only x86-64 binary invocation.
 - Rustybench harnesses in `crates/*/benches` measure parse and plan work.
-  The shell benchmark attempts setup and Ninja runs, but it skips
-  equivalent-work checks. Use paired workloads with failing commands
-  surfaced and outputs verified. Run `perf-gate-ready` before timing and
-  `perf-gate-ready -1` immediately after.
+  The CLI benchmark checks commands and artifacts, including paired libdrm
+  builds. See [benchmarks](benchmarks.md) for its oracle, timing gates and
+  anchor capture procedure.
 
 ## Consumer checks
 

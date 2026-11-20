@@ -10,7 +10,7 @@ set -Eeuo pipefail
 trap 'rc=$?; echo "benchmarks: command failed ($rc): $BASH_COMMAND" >&2' ERR
 
 if ! perf-gate-ready >/dev/null 2>&1; then
-  echo "perf gate deferred: host busy"
+  echo "verdict: inconclusive: perf gate deferred: host busy"
   exit 75
 fi
 
@@ -18,7 +18,7 @@ fi
 # validated, second is for overlap discard). If second disagrees on gate,
 # report deferred.
 if ! perf-gate-ready -1 >/dev/null 2>&1; then
-  echo "perf gate deferred: host busy (-1 check)"
+  echo "verdict: inconclusive: perf gate deferred: host busy (-1 check)"
   exit 75
 fi
 
@@ -32,7 +32,8 @@ mkdir -p "$TMPBASE"
 
 timed() {
   if [ -x /usr/bin/time ]; then
-    if out=$(/usr/bin/time -l "$@" 2>&1); then
+    if [ "$(uname -s)" = Linux ]; then time_args=(-f "wall=%e rss_kb=%M"); else time_args=(-l); fi
+    if out=$(/usr/bin/time "${time_args[@]}" "$@" 2>&1); then
       rc=0
     else
       rc=$?
@@ -40,8 +41,13 @@ timed() {
       echo "benchmarks: command failed ($rc): $*" >&2
       return "$rc"
     fi
-    wall=$(printf '%s' "$out" | awk '/real/ {print $1; exit}')
-    rss=$(printf '%s' "$out" | awk '/maximum resident/ {print $1; exit}')
+    if [ "$(uname -s)" = Linux ]; then
+      wall=$(printf '%s\n' "$out" | awk -F'[= ]' '/^wall=/ {print $2; exit}')
+      rss=$(printf '%s\n' "$out" | awk -F'[= ]' '/^wall=/ {print $4; exit}')
+    else
+      wall=$(printf '%s' "$out" | awk '/real/ {print $1; exit}')
+      rss=$(printf '%s' "$out" | awk '/maximum resident/ {print $1; exit}')
+    fi
     echo "wall=$wall rss=$rss rc=$rc"
   else
     if out=$(python3 -c "import subprocess,sys,time,resource; t=time.perf_counter(); r=subprocess.run(sys.argv[1:]); ru=resource.getrusage(resource.RUSAGE_CHILDREN); print(f'wall={time.perf_counter()-t:.3f} rss_kb={ru.ru_maxrss} rc={r.returncode}'); sys.exit(r.returncode)" "$@" 2>&1); then
@@ -148,7 +154,8 @@ for runner in ref gluon; do
   if [ "$runner" = ref ]; then header_count=$command_count; else require_count "$header_count" "$command_count" header; require_count "$command_count" 1 header; fi
 done
 if ! perf-gate-ready -1 >/dev/null 2>&1; then
-  echo "perf gate deferred: host busy (-1 check)"
+  echo "verdict: inconclusive: perf gate deferred: host busy (-1 check)"
   exit 75
 fi
-echo "benchmarks: PASS"
+python3 "$ROOT/tests/benchmarks/libdrm.py"
+echo "benchmarks: corpus completed; see verdict above"
