@@ -20,5 +20,12 @@ reference_tool() {
     printf 'error: expected reference %s %s, found %s at %s\n' "$program" "$expected" "$version" "$resolved" >&2
     return 1
   fi
+  case "$program" in
+    meson) [ "$(head -c 2 "$resolved")" = '#!' ] ;;
+    ninja) "$resolved" -t list 2>/dev/null | grep -q '^ninja subtools:' ;;
+  esac || {
+    printf 'error: reference %s is not the upstream implementation (an installed gluon?): %s\n' "$program" "$resolved" >&2
+    return 1
+  }
   printf '%s\n' "$resolved"
 }

@@ -28,7 +28,8 @@ lockfile. Component measurements are diagnostic and do not establish a gate.
 Runs write logs and a summary under `.work/bench/<date-time>/`. The CLI corpus
 checks command failures, artifacts and command counts. Its libdrm workload uses
 the pinned 2.4.134 archive, verifies its SHA-256, and builds with Laputa's
-libc-only configuration using both pinned reference Meson/Ninja and gluon. It
+libc-only configuration using both pinned reference Meson/Ninja and gluon; the
+references are checked as the differential harness checks them. It
 compares object and library output file sets and full-build, no-op and
 one-source rebuild command counts. No-op must execute zero commands; full and
 incremental builds must execute work. It measures cold setup, full build,

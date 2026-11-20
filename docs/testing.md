@@ -2,8 +2,11 @@
 
 The differential harness resolves Meson and Ninja from `PATH` once and
 checks their versions against [`tests/upstream/PINS`](../tests/upstream/PINS).
-It rejects executables that match the gluon candidates and stops if the
-reference setup reports `oxidized-meson`. Put the pinned upstream tools
+It rejects executables that match the gluon candidates, and any reference that
+is not the upstream implementation: Meson must be the Python script, and Ninja
+must list its `-t` subtools. That keeps an installed gluon release earlier on
+`PATH` from serving as its own reference. It stops if the reference setup
+reports `oxidized-meson`. Put the pinned upstream tools
 first on `PATH` before running the corpus.
 
 For successful Ninja fixtures, the harness compares file contents. After

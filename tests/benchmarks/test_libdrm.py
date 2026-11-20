@@ -23,6 +23,22 @@ class LibdrmTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 libdrm.load_anchor(path)
 
+    def test_reference_must_be_the_upstream_implementation(self):
+        libdrm.WORK.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=libdrm.WORK) as directory:
+            directory = pathlib.Path(directory)
+            native, script = directory / 'native', directory / 'script'
+            native.write_bytes(b'\x7fELF')
+            script.write_text('#!/usr/bin/env python3\n')
+            self.assertFalse(libdrm.upstream_tool('meson', native))
+            self.assertTrue(libdrm.upstream_tool('meson', script))
+            ninja = directory / 'ninja'
+            ninja.write_text('#!/bin/sh\nprintf "1.13.2\\n"\n')
+            ninja.chmod(0o755)
+            self.assertFalse(libdrm.upstream_tool('ninja', ninja))
+            ninja.write_text('#!/bin/sh\nprintf "ninja subtools:\\n"\n')
+            self.assertTrue(libdrm.upstream_tool('ninja', ninja))
+
     def test_verdicts(self):
         values = dict.fromkeys(libdrm.PHASES, 1.0)
         anchor = self.anchor()
