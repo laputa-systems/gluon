@@ -414,14 +414,6 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 - **Effort:** M
 
 
-### DSLP-20 · P2 · Ninja overwrites configure_file command output with raw input
-
-- **Area:** Meson generated rules
-- **Where:** crates/meson/src/backend.rs:857
-- **Problem:** Use configure_file with input data.in, a captured command that uppercases it, and a default custom target that copies the generated file. Both setup commands produce FIRST. The first Ninja build writes first under Gluon and FIRST under Meson 1.12.1. After changing the input to second, the candidate copies second and the reference produces SECOND.
-- **Recommendation:** Regenerate through the declared command or reconfiguration. Verify generated and downstream bytes before and after editing an input.
-- **Fix with:** reference-parity
-- **Effort:** M
 
 
 ### DSLP-16 · P3 · Ninja depfile parsing corrupts UTF-8 and escaped hashes
