@@ -23,18 +23,21 @@ Benchmarks: `tests/benchmarks/run.sh` (needs `perf-gate-ready`)
   artifacts, exits and no-op builds; cost is unmeasured. Consumer checks and
   benchmarks are separately invoked workloads.
 - Scheduling: `incremental::clean_edge_does_not_hold_the_only_jobserver_token`
-  checks clean and dirty work together; failed-edge dependent blocking is
-  unprotected (DSLP-12).
+  checks clean and dirty work together;
+  `incremental::keep_going_blocks_failed_edge_dependents` checks failed-edge
+  dependent blocking.
 - Dirty checking: `incremental::ordinary_inputs_rebuild_and_restat_stays_idle_after_observing_them`
-  checks explicit, implicit, phony and order-only inputs and restat. Missing
-  dependency records are unprotected (DSLP-13).
+  checks explicit, implicit, phony and order-only inputs and restat;
+  `incremental::missing_dependency_record_rebuilds_the_output` checks missing
+  dependency records.
 - Depfiles: `incremental::recorded_header_changes_rebuild_the_output` checks
   persisted header dependencies; `state::depfile` tests cover parsing. Dyndep
   readiness and dry runs have incremental tests and differential fixtures.
 - CLI exits: `tests/differential/test-ninja-observables.sh` checks failure and
   no-op status accounting; Meson `cli::tests` check test-command failures.
-- Meson subset: differential fixtures compare setup and artifacts; failed
-  `configure_file` inputs and commands are unprotected (DSLP-14).
+- Meson subset: differential fixtures compare setup and artifacts;
+  `crates/meson/tests/configure_file.rs` checks failed `configure_file` inputs
+  and commands.
 - Crate unit tests and engine equivalence cover public Rust behavior and generated
   Ninja manifests. Install and introspection JSON have CLI and install fixtures.
 - FFmpeg-build, Laputa and Play are [consumers](docs/testing.md#consumer-checks).
