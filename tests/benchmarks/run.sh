@@ -139,18 +139,21 @@ for n in 1000 10000 100000; do
 done
 for runner in ref gluon; do
   d="$TMPBASE/incr-$runner"; rm -rf "$d"; mkdir -p "$d"
-  printf 'rule cc\n  command = cc -c $in -o $out\nbuild a.o: cc a.c\n' >"$d/build.ninja"
-  printf 'int f(){return 1;}\n' >"$d/a.c"
+  printf 'rule cc\n  command = cc -MMD -MF app.d a.c -o app\n  depfile = app.d\n  deps = gcc\nbuild app: cc a.c\n' >"$d/build.ninja"
+  printf '%s\n' '#include <stdio.h>' '#include "a.h"' 'int main(void) { printf("%d\n", VALUE); return 0; }' >"$d/a.c"
+  printf '#define VALUE 1\n' >"$d/a.h"
   if [ "$runner" = ref ]; then ninja_cmd=ninja; else ninja_cmd="$GLUON_NINJA"; fi
   "$ninja_cmd" -C "$d" >/dev/null
-  require_file "$d/a.o"
+  require_file "$d/app"
+  if [ "$("$d/app")" != 1 ]; then echo "benchmarks: wrong initial executable output" >&2; exit 1; fi
   sleep 1; touch "$d/a.c"
   if [ "$runner" = ref ]; then observe "$ninja_cmd" -C "$d"; else timed "$ninja_cmd" -C "$d"; fi
-  require_file "$d/a.o"
+  require_file "$d/app"
   if [ "$runner" = ref ]; then source_count=$command_count; else require_count "$source_count" "$command_count" source; require_count "$command_count" 1 source; fi
-  printf 'int g;\n' >"$d/a.h"; printf 'int main(){return 0;}\n' >"$d/a.c"; sleep 1; touch "$d/a.h"
+  sleep 1; printf '#define VALUE 2\n' >"$d/a.h"
   if [ "$runner" = ref ]; then observe "$ninja_cmd" -C "$d"; else timed "$ninja_cmd" -C "$d"; fi
-  require_file "$d/a.o"
+  require_file "$d/app"
+  if [ "$("$d/app")" != 2 ]; then echo "benchmarks: wrong header rebuild output" >&2; exit 1; fi
   if [ "$runner" = ref ]; then header_count=$command_count; else require_count "$header_count" "$command_count" header; require_count "$command_count" 1 header; fi
 done
 if ! perf-gate-ready -1 >/dev/null 2>&1; then

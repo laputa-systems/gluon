@@ -26,7 +26,9 @@ lockfile. Component measurements are diagnostic and do not establish a gate.
 | all-components | Full / components | Entire Rustybench workspace; Cargo. |
 
 Runs write logs and a summary under `.work/bench/<date-time>/`. The CLI corpus
-checks command failures, artifacts and command counts. Its libdrm workload uses
+checks command failures, artifacts and command counts. Its header rebuild
+changes only a header included by the compiled program and checks the
+executable output before and after the change. Its libdrm workload uses
 the pinned 2.4.134 archive, verifies its SHA-256, and builds with Laputa's
 libc-only configuration using both pinned reference Meson/Ninja and gluon; the
 references are checked as the differential harness checks them. It
