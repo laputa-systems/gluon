@@ -22,6 +22,8 @@ cat >"$scratch/bin/ninja" <<'EOF'
 #!/bin/sh
 if [ "$1" = --version ]; then
   printf '%s\n' "$NINJA_PIN"
+elif [ "$1" = -t ] && [ "$2" = list ]; then
+  printf 'ninja subtools:\n'
 elif [ "$FAULT" = build-exit ]; then
   exit 7
 elif [ ! -f "$2/out" ]; then
