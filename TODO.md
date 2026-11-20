@@ -1,37 +1,14 @@
 Prefix: GLU
-Next: 33
-
-### GLU-29 · P2 · ninja drops trailing whitespace from variable values, breaking CMake compiler launchers
-
-- **Area:** ninja
-- **Where:** `crates/ninja/src/manifest.rs` (variable value parsing)
-- **Problem:** Ninja keeps a variable value's trailing spaces, and CMake relies on it: build.ninja sets `LAUNCHER = /path/to/launcher ` and rules run `command = ${LAUNCHER}${CODE_CHECK}/usr/bin/c++ ...`. gluon's ninja (release dd4b9664d3319e7dc9d01bd895c72d57aa298244, aarch64-apple-darwin, reports 1.13.2) strips the space, so every CMake project configured with CMAKE_<LANG>_COMPILER_LAUNCHER fails with `ninja: failed to spawn: /path/to/launcher/usr/bin/c++: Not a directory (os error 20)`. Found building LLVM 21.1.8 with kache as the launcher. Minimal repro: `printf 'rule r\n  command = ${PRE}echo -n ok > $out\nbuild out1: r\n  PRE = env \n' > build.ninja && ninja` succeeds with Ninja 1.13 (runs `env echo -n ok`) and fails with gluon.
-- **Recommendation:** Preserve trailing whitespace in variable values as Ninja's lexer does (only leading whitespace after `=` is skipped), and add the repro above as a differential fixture.
-- **Fix with:** reference-parity
+Next: 34
 
 ### GLU-30 · P2 · wrap downloads skip source_hash and patch_hash
+
 - **Area:** meson
 - **Where:** `crates/meson/src/wrap.rs:105-140`, `crates/meson/src/wrap.rs:175`, `crates/meson/src/wrap.rs:235`, `crates/meson/src/builtins/functions.rs:3178`
 - **Problem:** A subproject without a pre-extracted tree runs the wrap download, which fetches with curl or copies from packagefiles/packagecache and extracts without ever reading the wrap's `source_hash` or `patch_hash` (neither name appears in wrap.rs). A compromised source server, an HTTP path or a poisoned cache can therefore replace build inputs that the wrap pins, and attacker-controlled build files then run. `wrap_mode` is fixed at `default` (`crates/meson/src/builtins/functions.rs:4032`), so nothing disables downloads.
 - **Recommendation:** Verify the declared source and patch hashes before extracting downloaded or cached bytes and fail closed on a mismatch or a missing hash; honour `--wrap-mode=nodownload`. Acceptance: a wrap whose source or patch hash mismatches fails before extraction, and a correctly pinned archive builds.
 - **Fix with:** security
 - **Effort:** M
-
-### GLU-31 · P3 · differential no-op check counts the original build's edges
-- **Area:** tests
-- **Where:** `tests/differential/run.sh:213-227`
-- **Problem:** After the no-op rebuild, the harness compares edge counts from `build.log` and `cand_build.log` (the first builds) instead of `noop.log` and `cand_noop.log`, so a candidate that reruns every edge on every invocation passes the no-op contract.
-- **Recommendation:** Count edges in the no-op logs and require zero for both, as Meson's no-op contract states. Acceptance: a candidate that rebuilds one edge on a no-op run fails the fixture.
-- **Fix with:** test-audit
-- **Effort:** S
-
-### GLU-32 · P3 · differential harness passes fixtures where both builds fail
-- **Area:** tests
-- **Where:** `tests/differential/run.sh:118-128`, `tests/differential/run.sh:139-144`
-- **Problem:** Matching nonzero setup or build exits are reported as `PASS ... both-fail`, including for positive fixtures such as a trivial executable, so a missing compiler or another shared environmental failure makes the parity gate pass without comparing any output.
-- **Recommendation:** Allow a both-fail pass only for fixtures marked as expected to fail, and fail positive fixtures whose reference build does not succeed. Acceptance: removing the C compiler from PATH fails the positive fixtures instead of passing them.
-- **Fix with:** test-audit
-- **Effort:** S
 
 ### GLU-19 · P3 · shared libraries have no symbol-extractor edge
 
@@ -95,4 +72,31 @@ Next: 33
 - **Recommendation:** Mirror `_find_library_real`: search `extra_dirs` followed by `get_library_dirs()` and probe candidates by linking a shared library.
 - **Fix with:** reference-parity
 - **Effort:** M
+
+### GLU-31 · P3 · differential no-op check counts the original build's edges
+
+- **Area:** tests
+- **Where:** `tests/differential/run.sh:213-227`
+- **Problem:** After the no-op rebuild, the harness compares edge counts from `build.log` and `cand_build.log` (the first builds) instead of `noop.log` and `cand_noop.log`, so a candidate that reruns every edge on every invocation passes the no-op contract.
+- **Recommendation:** Count edges in the no-op logs and require zero for both, as Meson's no-op contract states. Acceptance: a candidate that rebuilds one edge on a no-op run fails the fixture.
+- **Fix with:** test-audit
+- **Effort:** S
+
+### GLU-32 · P3 · differential harness passes fixtures where both builds fail
+
+- **Area:** tests
+- **Where:** `tests/differential/run.sh:118-128`, `tests/differential/run.sh:139-144`
+- **Problem:** Matching nonzero setup or build exits are reported as `PASS ... both-fail`, including for positive fixtures such as a trivial executable, so a missing compiler or another shared environmental failure makes the parity gate pass without comparing any output.
+- **Recommendation:** Allow a both-fail pass only for fixtures marked as expected to fail, and fail positive fixtures whose reference build does not succeed. Acceptance: removing the C compiler from PATH fails the positive fixtures instead of passing them.
+- **Fix with:** test-audit
+- **Effort:** S
+
+### GLU-33 · P3 · musl build check pins a Docker image that does not exist
+
+- **Area:** tests
+- **Where:** `tests/upstream/PINS:14-17`, `tests/upstream/musl.sh:3-18`
+- **Problem:** `musl.sh` runs `docker run rust:nightly-2026-09-15`, the `RUST_DOCKER_IMAGE` pin, but Docker Hub's `rust` repository has no dated nightly tags: `docker manifest inspect rust:nightly-2026-09-15` and `rust:nightly-2026-11-09` both fail with not found (2026-11-20), so the static-musl check cannot start. `TOOLCHAIN_CHANNEL`, `CARGO_VERSION` and `RUSTC_VERSION` have no reader and already disagree with `rust-toolchain.toml` (`nightly-2026-11-09`). Laputa's vendored copy patched these lines locally, which its vendoring rule forbids.
+- **Recommendation:** Pin an image that exists by digest (for example a `rust` stable slim image) and let rustup install the channel from `rust-toolchain.toml` inside it, then delete the unread toolchain fields from PINS so `rust-toolchain.toml` is the only toolchain pin. Acceptance: `tests/upstream/musl.sh` pulls its image, builds both static binaries and runs their `--version` on a clean host.
+- **Fix with:** single-source-of-truth
+- **Effort:** S
 
