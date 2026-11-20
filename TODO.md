@@ -1,15 +1,6 @@
 Prefix: GLU
 Next: 41
 
-### GLU-30 · P2 · wrap downloads skip source_hash and patch_hash
-
-- **Area:** meson
-- **Where:** `crates/meson/src/wrap.rs:105-140`, `crates/meson/src/wrap.rs:175`, `crates/meson/src/wrap.rs:235`, `crates/meson/src/builtins/functions.rs:3178`
-- **Problem:** A subproject without a pre-extracted tree runs the wrap download, which fetches with curl or copies from packagefiles/packagecache and extracts without ever reading the wrap's `source_hash` or `patch_hash` (neither name appears in wrap.rs). A compromised source server, an HTTP path or a poisoned cache can therefore replace build inputs that the wrap pins, and attacker-controlled build files then run. `wrap_mode` is fixed at `default` (`crates/meson/src/builtins/functions.rs:4032`), so nothing disables downloads.
-- **Recommendation:** Verify the declared source and patch hashes before extracting downloaded or cached bytes and fail closed on a mismatch or a missing hash; honour `--wrap-mode=nodownload`. Acceptance: a wrap whose source or patch hash mismatches fails before extraction, and a correctly pinned archive builds.
-- **Fix with:** security
-- **Effort:** M
-
 ### GLU-19 · P3 · shared libraries have no symbol-extractor edge
 
 - **Area:** meson

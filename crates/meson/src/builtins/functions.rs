@@ -3124,6 +3124,14 @@ fn builtin_subdir(vm: &mut VM, args: &[CallArg]) -> Result<Object, String> {
     Ok(Object::None)
 }
 
+/// The `wrap_mode` builtin option (`default` unless the user set it).
+fn wrap_mode_option(vm: &VM) -> String {
+    match vm.options.get("wrap_mode") {
+        Some(Object::String(mode)) => mode.clone(),
+        _ => "default".to_string(),
+    }
+}
+
 fn builtin_subproject(vm: &mut VM, args: &[CallArg]) -> Result<Object, String> {
     let positional = VM::get_positional_args(args);
     let name = positional
@@ -3190,7 +3198,8 @@ fn builtin_subproject(vm: &mut VM, args: &[CallArg]) -> Result<Object, String> {
                 }
             }
             if !already_present {
-                crate::wrap::download_wrap(&wrap_file, &subproject_path)?;
+                let wrap_mode = wrap_mode_option(vm);
+                crate::wrap::download_wrap(&wrap_file, &subproject_path, &wrap_mode)?;
                 // Check if wrap file specifies a different directory name
                 if !Path::new(&build_file).exists() {
                     if let Some(dir_name) = wrap_dir_name {
@@ -3212,6 +3221,7 @@ fn builtin_subproject(vm: &mut VM, args: &[CallArg]) -> Result<Object, String> {
                 base: &str,
                 name: &str,
                 depth: u32,
+                wrap_mode: &str,
             ) -> Option<(String, String)> {
                 if depth > 5 {
                     return None;
@@ -3243,7 +3253,7 @@ fn builtin_subproject(vm: &mut VM, args: &[CallArg]) -> Result<Object, String> {
                                     format!("{}/subprojects/{}", p.display(), sp_dir_name);
                                 // Also pass the non-directory path for download
                                 let download_dest = format!("{}/subprojects/{}", p.display(), name);
-                                let _ = crate::wrap::download_wrap(&nested_wrap, &download_dest);
+                                let _ = crate::wrap::download_wrap(&nested_wrap, &download_dest, wrap_mode);
                                 let nb = format!("{}/meson.build", nested_sp);
                                 if Path::new(&nb).exists() {
                                     return Some((nested_sp, nb));
@@ -3253,7 +3263,7 @@ fn builtin_subproject(vm: &mut VM, args: &[CallArg]) -> Result<Object, String> {
                             let sub_sp = format!("{}/subprojects", p.display());
                             if Path::new(&sub_sp).is_dir() {
                                 if let Some(found) =
-                                    find_nested_subproject(&sub_sp, name, depth + 1)
+                                    find_nested_subproject(&sub_sp, name, depth + 1, wrap_mode)
                                 {
                                     return Some(found);
                                 }
@@ -3263,9 +3273,10 @@ fn builtin_subproject(vm: &mut VM, args: &[CallArg]) -> Result<Object, String> {
                 }
                 None
             }
+            let wrap_mode = wrap_mode_option(vm);
             let sp_base = format!("{}/{}", vm.top_source_root, subproject_dir);
             if let Some((nested_path, nested_build_file)) =
-                find_nested_subproject(&sp_base, &name, 0)
+                find_nested_subproject(&sp_base, &name, 0, &wrap_mode)
             {
                 subproject_path = nested_path;
                 build_file = nested_build_file;
