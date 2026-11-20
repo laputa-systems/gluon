@@ -31,7 +31,9 @@ changes only a header included by the compiled program and checks the
 executable output before and after the change. Its libdrm workload uses
 the pinned 2.4.134 archive, verifies its SHA-256, and builds with Laputa's
 libc-only configuration using both pinned reference Meson/Ninja and gluon; the
-references are checked as the differential harness checks them. It
+references are checked as the differential harness checks them. Both
+runners get `CC=cc` and `CCACHE_DISABLE=1`, because reference Meson otherwise
+wraps the compiler in an installed ccache and its builds become cache hits. It
 compares object and library output file sets and full-build, no-op and
 one-source rebuild command counts. No-op must execute zero commands; full and
 incremental builds must execute work. It measures cold setup, full build,
