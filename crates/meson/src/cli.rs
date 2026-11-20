@@ -939,9 +939,7 @@ impl Cli {
             eprintln!("ERROR writing install plan: {}", e);
             return 1;
         }
-        let meson_command = std::env::current_exe()
-            .map(|path| path.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "meson".to_string());
+        let meson_command = meson_invocation();
         let backend = NinjaBackend::new(&source_dir, &build_dir)
             .with_meson_command(&meson_command)
             .with_install_aliases()
@@ -1581,11 +1579,15 @@ fn format_meson_source(source: &str) -> String {
     result
 }
 
-pub fn meson_program() -> String {
-    std::env::current_exe()
-        .expect("the running meson has an executable path")
-        .to_string_lossy()
-        .into_owned()
+pub(crate) fn meson_invocation() -> Vec<String> {
+    let program = std::env::current_exe()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "meson".to_string());
+    let mut invocation = vec![program];
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("meson")) {
+        invocation.push("meson".to_string());
+    }
+    invocation
 }
 
 pub fn split_command(value: &str) -> Vec<String> {

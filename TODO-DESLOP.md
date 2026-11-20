@@ -404,14 +404,6 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 
 
 
-### DSLP-19 · P2 · integrated Meson emits invalid self-invocations
-
-- **Area:** Meson embedded CLI
-- **Where:** crates/meson/src/cli.rs:942, crates/meson/src/backend.rs:275,930, bins/build/src/main.rs:17
-- **Problem:** Configure a C project with static_library('value', 'value.c', install: true) through gluon-build meson setup. Ninja install fails at gluon-build --internal static-link, whose argv lacks the meson subcommand. The install rule omits it too. Standalone meson installs libvalue.a from the same project.
-- **Recommendation:** Carry the selected Meson invocation through generated rules, including the embedded subcommand. Verify both standalone and integrated setup and install.
-- **Fix with:** reference-parity
-- **Effort:** M
 
 
 
