@@ -425,13 +425,12 @@ fn fs_copyfile(vm: &mut VM, _obj: &Object, args: &[CallArg]) -> Result<Object, S
     vm.build_data.custom_targets.push(CustomTarget {
         name: dest_name.clone(),
         id,
-        command: vec![
-            crate::cli::meson_program(),
+        command: [crate::cli::meson_invocation(), vec![
             "--internal".to_string(),
             "copy".to_string(),
             "@INPUT@".to_string(),
             "@OUTPUT@".to_string(),
-        ],
+        ]].concat(),
         input: vec![src],
         output: vec![dest_name],
         depends: Vec::new(),

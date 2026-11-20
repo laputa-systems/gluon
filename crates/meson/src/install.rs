@@ -734,10 +734,8 @@ fn shell_quote(value: &str) -> String {
 }
 
 fn introspect_command() -> String {
-    let executable = std::env::current_exe()
-        .map(|path| path.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "meson".to_string());
-    format!("{} introspect", shell_quote(&executable))
+    let invocation = crate::cli::meson_invocation();
+    format!("{} introspect", invocation.iter().map(|arg| shell_quote(arg)).collect::<Vec<_>>().join(" "))
 }
 
 fn script_environment(source_root: &str, build_root: &str) -> Vec<(&'static str, String)> {

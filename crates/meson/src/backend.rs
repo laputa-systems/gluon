@@ -13,7 +13,7 @@ const JSON_PRETTY: SerializerConfig =
 pub struct NinjaBackend {
     pub source_root: String,
     pub build_root: String,
-    pub meson_command: String,
+    pub meson_command: Vec<String>,
     pub install_aliases: bool,
     pub toolchain: Toolchain,
 }
@@ -42,14 +42,14 @@ impl NinjaBackend {
         Self {
             source_root: source_root.to_string(),
             build_root: build_root.to_string(),
-            meson_command: "meson".to_string(),
+            meson_command: vec!["meson".to_string()],
             install_aliases: false,
             toolchain: Toolchain::default(),
         }
     }
 
-    pub fn with_meson_command(mut self, meson_command: &str) -> Self {
-        self.meson_command = meson_command.to_string();
+    pub fn with_meson_command(mut self, meson_command: &[String]) -> Self {
+        self.meson_command = meson_command.to_vec();
         self
     }
 
@@ -273,7 +273,7 @@ impl NinjaBackend {
         writeln!(
             out,
             "  command = {} --internal static-link $out -- {} {} $out $in",
-            quote_argument(&self.meson_command),
+            shell_escape_command(&self.meson_command).replace('$', "$$"),
             shell_escape_command(&self.toolchain.archiver),
             self.toolchain.archiver_args
         )
@@ -302,7 +302,7 @@ impl NinjaBackend {
         writeln!(
             out,
             "  command = {} setup --reconfigure {} {}",
-            quote_argument(&self.meson_command).replace('$', "$$"),
+            shell_escape_command(&self.meson_command).replace('$', "$$"),
             quote_argument(&self.build_root).replace('$', "$$"),
             quote_argument(&self.source_root).replace('$', "$$")
         )
@@ -698,11 +698,8 @@ impl NinjaBackend {
         let wrapped = !env_keys.is_empty() || ct.capture || ct.feed;
         let mut argv: Vec<String> = Vec::new();
         if wrapped {
-            argv.extend([
-                self.meson_command.clone(),
-                "--internal".to_string(),
-                "exe".to_string(),
-            ]);
+            argv.extend(self.meson_command.iter().cloned());
+            argv.extend(["--internal".to_string(), "exe".to_string()]);
             if ct.capture {
                 let output = outputs
                     .first()
@@ -721,7 +718,7 @@ impl NinjaBackend {
             argv.push("--".to_string());
         }
         argv.extend(command_parts.iter().cloned());
-        let command_line = shell_escape_command(&argv);
+        let command_line = shell_escape_command(&argv).replace('$', "$$");
         writeln!(out, "  COMMAND = {}", command_line).unwrap();
         writeln!(out, "  DESC = Generating {}", ct.name).unwrap();
         if let Some(ref depfile) = ct.depfile {
@@ -933,11 +930,7 @@ impl NinjaBackend {
         writeln!(
             out,
             "  COMMAND = {}",
-            shell_escape_command(&[
-                self.meson_command.clone(),
-                "install".to_string(),
-                "--no-rebuild".to_string(),
-            ])
+            shell_escape_command(&[self.meson_command.as_slice(), &["install".to_string(), "--no-rebuild".to_string()]].concat()).replace('$', "$$")
         )
         .unwrap();
         writeln!(out, "  pool = console").unwrap();
