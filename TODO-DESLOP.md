@@ -1,5 +1,5 @@
 Prefix: DSLP
-Next: 24
+Next: 26
 
 Deslop campaign backlog ([plan](https://github.com/laputa-systems/stuff/blob/main/docs/campaigns/deslop.md), tier B). One agent works this file with the `deslop` skill: take the lowest-numbered open ticket whose area does not start with `Needs owner ·`. After DSLP-5, work the open P1 and P2 findings, then fill in `## Report` below.
 
@@ -408,6 +408,15 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 
 
 
+### DSLP-24 · P2 · meson configure resets an explicit prefix to the default
+
+- **Area:** meson · reconfigure
+- **Where:** crates/meson/src/cli.rs reconfigure
+- **Problem:** While testing DSLP-19, a build set up with --prefix=/usr reconfigured with prefix /usr/local, so a later install would land in the wrong place. Meson keeps the configured prefix across reconfigure.
+- **Recommendation:** Reproduce with setup --prefix=/usr then meson configure, assert the prefix and install location, and preserve saved built-in options the way DSLP-15 preserved machine-file options.
+- **Fix with:** durable-state
+- **Effort:** S
+
 ### DSLP-16 · P3 · Ninja depfile parsing corrupts UTF-8 and escaped hashes
 
 - **Area:** Ninja dependency paths
@@ -417,6 +426,7 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 - **Fix with:** reference-parity
 - **Effort:** M
 
+
 ### DSLP-17 · P3 · Meson target introspection omits custom targets
 
 - **Area:** Meson introspection
@@ -425,7 +435,6 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 - **Recommendation:** Generate entries for supported custom targets using the owning build data. Compare ID, outputs and type to pinned Meson.
 - **Fix with:** reference-parity
 - **Effort:** M
-
 
 ### DSLP-18 · P3 · Meson setup silently accepts malformed option files
 
@@ -445,6 +454,7 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 - **Fix with:** dead-code-archaeology
 - **Effort:** S
 
+
 ### DSLP-22 · P3 · measure verified end-to-end build journeys
 
 - **Area:** benchmark coverage
@@ -454,7 +464,6 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 - **Fix with:** refactor-benchmarks
 - **Effort:** L
 
-
 ### DSLP-23 · P3 · add attribution for build performance regressions
 
 - **Area:** benchmark observability
@@ -463,3 +472,14 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 - **Recommendation:** Document separate diagnostic runs using platform CPU sampling, allocation profiling and syscall or I/O tracing with operation boundaries, including scope and overhead.
 - **Fix with:** bench-pyramid
 - **Effort:** M
+
+
+### DSLP-25 · P3 · meson.build changes do not regenerate build.ninja
+
+- **Area:** meson · backend
+- **Where:** crates/meson/src/backend.rs regeneration edge
+- **Problem:** The regeneration edge depends only on command-based configure_file inputs, so editing meson.build does not rerun setup on the next ninja invocation. Meson regenerates when any build definition file changes.
+- **Recommendation:** Add the processed meson.build and meson_options files to the regeneration edge inputs and test that editing meson.build regenerates once and then idles.
+- **Fix with:** reference-parity
+- **Effort:** S
+
