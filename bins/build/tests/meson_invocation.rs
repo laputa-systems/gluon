@@ -58,3 +58,21 @@ fn integrated_and_standalone_meson_build_and_install() {
     exercise(&standalone, &[], false);
     exercise(integrated, &["meson"], true);
 }
+
+#[test]
+fn setup_options_survive_configure_and_install() {
+    let dir = fixture();
+    let build = dir.join("build");
+    let dest = dir.join("dest");
+    let program = Path::new(env!("CARGO_BIN_EXE_gluon-build"));
+    run(Command::new(program).args(["meson", "setup"]).arg(&build).arg(&dir).args(["--prefix=/usr", "--libdir=lib64"]));
+    run(Command::new(program).args(["meson", "setup", "--reconfigure"]).arg(&build).arg(&dir));
+    run(Command::new(program).args(["meson", "configure", "-Dbuildtype=release"]).arg(&build));
+    let saved = std::fs::read_to_string(build.join("meson-private/cmd_line.txt")).unwrap();
+    assert!(saved.contains("prefix=/usr"), "{saved}");
+    assert!(saved.contains("libdir=lib64"), "{saved}");
+    let ninja = ["/usr/bin/ninja", "/opt/homebrew/bin/ninja"].into_iter().find(|path| Path::new(path).is_file()).unwrap_or("ninja");
+    run(Command::new(ninja).arg("-C").arg(&build).arg("install").env("DESTDIR", &dest));
+    assert!(dest.join("usr/lib64/libvalue.a").is_file());
+    std::fs::remove_dir_all(dir).unwrap();
+}

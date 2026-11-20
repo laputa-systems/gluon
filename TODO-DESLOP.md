@@ -408,14 +408,6 @@ Existing Findings tickets and the benchmark timing gates were left alone.
 
 
 
-### DSLP-24 · P2 · meson configure resets an explicit prefix to the default
-
-- **Area:** meson · reconfigure
-- **Where:** crates/meson/src/cli.rs reconfigure
-- **Problem:** While testing DSLP-19, a build set up with --prefix=/usr reconfigured with prefix /usr/local, so a later install would land in the wrong place. Meson keeps the configured prefix across reconfigure.
-- **Recommendation:** Reproduce with setup --prefix=/usr then meson configure, assert the prefix and install location, and preserve saved built-in options the way DSLP-15 preserved machine-file options.
-- **Fix with:** durable-state
-- **Effort:** S
 
 ### DSLP-16 · P3 · Ninja depfile parsing corrupts UTF-8 and escaped hashes
 
