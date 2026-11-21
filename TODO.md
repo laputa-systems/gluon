@@ -1,5 +1,5 @@
 Prefix: GLU
-Next: 41
+Next: 42
 
 ### GLU-19 · P3 · shared libraries have no symbol-extractor edge
 
@@ -153,3 +153,13 @@ Next: 41
 - **Recommendation:** Add the processed meson.build and meson_options files to the regeneration edge inputs and test that editing meson.build regenerates once and then idles.
 - **Fix with:** reference-parity
 - **Effort:** S
+
+### GLU-41 · P3 · Run Muon as an independent Meson oracle
+
+- **Area:** Tests · Meson semantics
+- **Where:** `tests/upstream/PINS`, `tests/differential/run.sh`, `tests/differential/references.sh`, `docs/testing.md`, `docs/decisions.md` (P-3)
+- **Problem:** `MUON_VERSION=0.7.0` is already pinned and P-3 calls for informational Muon comparisons, but the differential runner only invokes upstream Meson/Ninja and Gluon. There is no executable third-implementation comparison to investigate disagreements or ambiguous Meson behavior.
+- **Recommendation:** Extend the existing harness with an explicitly invoked Muon diagnostic lane over a small shared C fixture subset (options, custom targets, dependency propagation and no-op builds). Reuse the current pin, record immutable source/checksum provenance and validate the reference executable; use Muon's native CLI adapter. Run all three configure frontends with the same pinned upstream Ninja to isolate frontend behavior, preserving the existing Gluon-Ninja parity lane. Set equivalent options explicitly and compare observable statuses, artifacts and rebuild behavior, not generated manifest text. Classify disagreements against the declared Meson compatibility contract and [Muon's documented differences](https://docs.muon.build/differences); agreement by two implementations is not a specification. Keep Muon divergences informational under P-3 and the tool external and test-only; import no GPL implementation or fixture code.
+- **Acceptance:** Document a reproducible command and a bounded three-way report with tool provenance, per-case outcomes and explicit unsupported/incomplete reasons on Linux/musl and macOS. Positive reference-stage failures or missing tools in a requested run cannot count as clean coverage, and zero completed comparisons cannot pass. A known Muon difference exercises classification, and an injected changed output proves that comparisons detect a mismatch. Minimize actual disagreements into independently authored regressions with a recorded disposition; a bounded clean result is valid and finding a new defect is not required.
+- **Fix with:** reference-parity
+- **Effort:** M
