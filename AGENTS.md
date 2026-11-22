@@ -15,6 +15,7 @@ Benchmarks: `tests/benchmarks/run.sh` (needs `perf-gate-ready`)
 
 ## Verification
 
+- `make clean` removes the checkout’s Cargo target directory.
 - Edit: `cargo test --profile dist --locked -p gluon-ninja --test incremental`
   checks Ninja CLI rebuild and dyndep behavior; its standalone cost is unmeasured.
 - Change: `make test` runs harness controls and the workspace dist suite. The

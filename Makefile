@@ -16,7 +16,12 @@ coverage:
 	cargo llvm-cov --workspace --locked --branch --summary-only
 
 clean:
-	cargo clean
+	@for artifact in ./target; do \
+	  if test -L "$$artifact" || { test -e "$$artifact" && ! test -d "$$artifact"; }; then \
+	    printf '%s\n' "make clean: $$artifact must be a local build directory" >&2; exit 1; \
+	  fi; \
+	done
+	rm -rf -- ./target
 
 bench:
 	python3 tests/benchmarks/driver.py run $(BENCH_ARGS)
