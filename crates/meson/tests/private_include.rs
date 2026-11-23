@@ -40,7 +40,7 @@ fn private_include_precedes_implicit_directories() {
     std::fs::write(dir.join("meson.build"), "project('p', 'c')\nexecutable('app', 'main.c')\nexecutable('noimplicit', 'main.c', implicit_include_directories: false)\n").unwrap();
     std::fs::write(dir.join("main.c"), "int main(void) { return 0; }\n").unwrap();
     setup(&dir);
-    assert_eq!(include_args(&dir, "app"), vec![format!("-I{}/build/app.p", dir.display()), format!("-I{}", dir.display()), format!("-I{}/build", dir.display())]);
+    assert_eq!(include_args(&dir, "app"), vec![format!("-I{}/build/app.p", dir.display()), format!("-I{}/build", dir.display()), format!("-I{}", dir.display())]);
     assert_eq!(include_args(&dir, "noimplicit"), vec![format!("-I{}/build/noimplicit.p", dir.display())]);
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -58,4 +58,20 @@ fn generated_private_header_takes_precedence() {
         assert!(Command::new(dir.join("build/app")).status().unwrap().success());
         std::fs::remove_dir_all(dir).unwrap();
     }
+}
+
+#[test]
+fn subdir_targets_include_only_their_own_directories() {
+    let dir = fixture();
+    std::fs::create_dir(dir.join("sub")).unwrap();
+    std::fs::write(dir.join("meson.build"), "project('p', 'c')\nsubdir('sub')\n").unwrap();
+    std::fs::write(dir.join("sub/meson.build"), "executable('inner', 'main.c')\n").unwrap();
+    std::fs::write(dir.join("sub/main.c"), "int main(void) { return 0; }\n").unwrap();
+    setup(&dir);
+    assert_eq!(include_args(&dir, "sub/inner"), vec![
+        format!("-I{}/build/sub/inner.p", dir.display()),
+        format!("-I{}/build/sub", dir.display()),
+        format!("-I{}/sub", dir.display()),
+    ]);
+    std::fs::remove_dir_all(dir).unwrap();
 }

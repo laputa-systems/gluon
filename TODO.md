@@ -164,16 +164,6 @@ Next: 44
 - **Fix with:** reference-parity
 - **Effort:** M
 
-### GLU-42 · P3 · compiler commands omit the target private include directory
-
-- **Area:** meson · backend
-- **Where:** crates/meson/src/backend.rs compile-edge arguments
-- **Problem:** For `project('p', 'c')` and `executable('app', 'main.c')`, reference Meson 1.12.1 includes `-Iapp.p` in the C compile command; gluon omits it. Generated headers in the target private directory are therefore not found through the implicit include path.
-- **Reproducer:** Configure that project with each implementation. The reference command begins `cc -Iapp.p -I. -I../src ... -c ../src/main.c`; gluon begins `cc -I<source> -I<build> ... -c <source>/main.c`.
-- **Recommendation:** Add the target private directory to compile-edge include arguments and compare the generated command with the pinned Meson reference.
-- **Fix with:** reference-parity
-- **Effort:** S
-
 ### GLU-43 · P3 · C++ compile commands omit Meson's default libstdc++ assertions
 
 - **Area:** meson · compiler defaults
@@ -183,4 +173,3 @@ Next: 44
 - **Recommendation:** Find the option and buildtype conditions under which the reference adds the define, model them, and compare against the pinned reference.
 - **Fix with:** reference-parity
 - **Effort:** S
-
