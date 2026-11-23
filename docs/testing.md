@@ -66,6 +66,12 @@ Gates, narrowest first:
   Meson and Ninja. Verify the installed library with a linked decoder check.
 - Laputa's `packages/gluon/proof.xsh` covers shell-free setup, build and
   installation.
+- Kache's `make cc-project-meson GLUON_BIN=<dir>` configures a C/C++ project
+  with the candidate `meson` and builds it with the candidate `ninja`, using
+  kache as a compiler launcher prefix in `CC`/`CXX`. Raw, cold, warm, edit,
+  revert and relocated builds must produce byte-identical objects and the
+  expected cache hits ([kache](https://github.com/joshuarli/kache),
+  `scripts/cc-project-meson.py`).
 - Build Play's pinned libplacebo and SPIRV-Cross against the candidate tools
   in an isolated checkout, then link the player crates against the dependency
   prefix. [Play's dependency build](https://github.com/joshuarli/play/blob/bae10f91b7003e208964eab030ba024d9b6c1a49/scripts/build-deps.sh)
