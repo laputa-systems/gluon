@@ -24,7 +24,7 @@ fn setup(dir: &Path) {
 fn fixture() -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("gluon-private-include-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
     std::fs::create_dir_all(&dir).unwrap();
-    dir
+    dir.canonicalize().unwrap()
 }
 
 fn include_args(dir: &Path, target: &str) -> Vec<String> {
