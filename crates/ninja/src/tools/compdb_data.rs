@@ -86,7 +86,7 @@ pub(crate) fn render(state: &State, directory: &str, edges: impl Iterator<Item =
     out
 }
 
-pub(crate) fn render_rules(state: &State, directory: &str, rules: &[&str], expand_rsp: bool) -> String {
+pub fn render_rules(state: &State, directory: &str, rules: &[&str], expand_rsp: bool) -> String {
     let edges = state.edges.iter().enumerate().filter_map(|(index, edge)| {
         let rule = state.rules.get(&edge.rule);
         let has_command = edge.bindings.contains_key("command") || rule.is_some_and(|r| r.bindings.contains_key("command"));

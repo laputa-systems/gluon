@@ -1,5 +1,5 @@
 Prefix: GLU
-Next: 42
+Next: 44
 
 ### GLU-19 · P3 · shared libraries have no symbol-extractor edge
 
@@ -173,3 +173,14 @@ Next: 42
 - **Recommendation:** Add the target private directory to compile-edge include arguments and compare the generated command with the pinned Meson reference.
 - **Fix with:** reference-parity
 - **Effort:** S
+
+### GLU-43 · P3 · C++ compile commands omit Meson's default libstdc++ assertions
+
+- **Area:** meson · compiler defaults
+- **Where:** crates/meson C++ compile arguments
+- **Problem:** For a C++ target, reference Meson 1.12.1 adds `-D_GLIBCXX_ASSERTIONS=1` to the compile command on this host (Alpine, Clang 23, default options); gluon does not, so a C++ object differs from the reference build.
+- **Reproducer:** `project('p', 'c', 'cpp')` with `executable('app', 'main.c', 'part.cpp')`, configured by each implementation with `CXX=clang++`; compare the `part.cpp` entries in `compile_commands.json`.
+- **Recommendation:** Find the option and buildtype conditions under which the reference adds the define, model them, and compare against the pinned reference.
+- **Fix with:** reference-parity
+- **Effort:** S
+

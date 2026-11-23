@@ -43,3 +43,17 @@ fn compdb_selects_rules_expands_responses_and_escapes_json() {
     assert!(run(&dir, "-t compdb-targets -x a.o").contains("cc a.c b.c"));
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn chdir_banner_stays_out_of_tool_output() {
+    let dir = std::env::temp_dir().join(format!("gluon-compdb-chdir-{}", std::process::id()));
+    fs::create_dir_all(dir.join("out")).unwrap();
+    fs::write(dir.join("out/build.ninja"), "rule cc\n  command = cc -c $in -o $out\nbuild a.o: cc a.c\n").unwrap();
+    fs::write(dir.join("out/a.c"), "").unwrap();
+    let tool = run(&dir, "-C out -t compdb");
+    assert!(tool.contains("\"output\": \"a.o\""), "{tool}");
+    assert!(!tool.contains("Entering directory"), "{tool}");
+    assert!(run(&dir, "-C out -n").contains("ninja: Entering directory `out'"));
+    assert!(!run(&dir, "-C out -n --quiet").contains("Entering directory"));
+    fs::remove_dir_all(dir).unwrap();
+}

@@ -11,6 +11,8 @@ mod inputs;
 mod multi_inputs;
 mod recompact;
 
+pub use compdb_data::render_rules as render_compdb_rules;
+
 use crate::cli::Options;
 use crate::graph::State;
 

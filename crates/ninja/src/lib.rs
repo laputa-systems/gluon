@@ -39,13 +39,16 @@ pub fn main_from(raw: Vec<String>) -> ExitCode {
     }
 
     // -C must take effect before we read the manifest, exactly like the
-    // reference binary, which prints the chdir banner to stdout.
+    // reference binary, which prints the chdir banner to stdout unless a
+    // tool runs or --quiet is set, so tool output can be redirected.
     if let Some(dir) = &opts.chdir {
         if let Err(e) = std::env::set_current_dir(dir) {
             eprintln!("ninja: chdir to '{dir}' - {e}");
             return ExitCode::from(1);
         }
-        println!("ninja: Entering directory `{dir}'");
+        if opts.tool.is_none() && !opts.quiet {
+            println!("ninja: Entering directory `{dir}'");
+        }
     }
 
     match run(&opts) {
