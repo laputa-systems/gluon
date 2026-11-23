@@ -969,6 +969,27 @@ impl Cli {
             return 1;
         }
 
+        let state = match ninja::manifest::parse_file(&ninja_path) {
+            Ok(state) => state,
+            Err(e) => {
+                eprintln!("ERROR reading {}: {}", ninja_path, e);
+                return 1;
+            }
+        };
+        let compile_rules: Vec<&str> = state.rules.values()
+            .filter(|rule| rule.name.ends_with("_COMPILER"))
+            .map(|rule| rule.name.as_str()).collect();
+        let database = if compile_rules.is_empty() {
+            "[\n]\n".to_string()
+        } else {
+            ninja::tools::render_compdb_rules(&state, &build_dir, &compile_rules, true)
+        };
+        let compdb_path = Path::new(&build_dir).join("compile_commands.json");
+        if let Err(e) = std::fs::write(&compdb_path, database) {
+            eprintln!("Cannot write {}: {}", compdb_path.display(), e);
+            return 1;
+        }
+
         // Write introspection data
         if let Err(e) = write_introspection(
             &build_dir,

@@ -19,6 +19,7 @@ macro_rules! cli_short_t { () => { "-t" }; }
 macro_rules! cli_short_v { () => { "-v" }; }
 macro_rules! cli_short_x { () => { "-x" }; }
 macro_rules! cli_command_clean { () => { "clean" }; }
+macro_rules! cli_command_compdb { () => { "compdb" }; }
 macro_rules! cli_command_compdb_targets { () => { "compdb-targets" }; }
 macro_rules! cli_command_graph_json { () => { "graph-json" }; }
 macro_rules! cli_command_inputs { () => { "inputs" }; }
