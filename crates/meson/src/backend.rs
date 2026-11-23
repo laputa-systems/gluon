@@ -1378,6 +1378,15 @@ impl NinjaBackend {
                 "never" => args.push("-fdiagnostics-color=never".to_string()),
                 _ => args.push("-fdiagnostics-color=always".to_string()),
             }
+            let ndebug = override_value("b_ndebug").unwrap_or_else(|| match options.get("b_ndebug") {
+                Some(Object::Bool(value)) => value.to_string(),
+                _ => option_string(options, "b_ndebug", "false"),
+            });
+            let disabled = ndebug == "true" || (ndebug == "if-release"
+                && matches!(option("buildtype", "debug").as_str(), "release" | "plain"));
+            if let Some(arg) = assertion_arg(language_key, disabled, build_data.compilers.get(language_key)) {
+                args.push(arg.to_string());
+            }
             if matches!(language_key, "c" | "cpp") {
                 args.push("-D_FILE_OFFSET_BITS=64".to_string());
             }
@@ -1665,6 +1674,27 @@ fn quote_argument(argument: &str) -> String {
     }
 }
 
+fn assertion_arg(language: &str, disabled: bool, compiler: Option<&CompilerData>) -> Option<&'static str> {
+    if !matches!(language, "c" | "cpp") {
+        return None;
+    }
+    if disabled {
+        return Some("-DNDEBUG");
+    }
+    if language != "cpp" {
+        return None;
+    }
+    let compiler = compiler?;
+    if !matches!(compiler.id.as_str(), "gcc" | "clang") || ["_GLIBCXX_ASSERTIONS", "_LIBCPP_HARDENING_MODE", "_LIBCPP_ENABLE_ASSERTIONS"].iter().any(|name| compiler.defines.contains_key(*name)) {
+        return None;
+    }
+    match compiler.cpp_stdlib.as_deref() {
+        Some("stdc++") => Some("-D_GLIBCXX_ASSERTIONS=1"),
+        Some("c++") => Some("-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST"),
+        _ => None,
+    }
+}
+
 fn option_string(options: &HashMap<String, Object>, key: &str, default: &str) -> String {
     match options.get(key) {
         Some(Object::String(value)) => value.clone(),
@@ -1815,4 +1845,29 @@ pub fn write_introspection(
         .map_err(|e| format!("Cannot write introspection: {}", e))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod assertion_tests {
+    use super::*;
+
+    #[test]
+    fn cpp_stdlib_assertions_respect_compiler_predefines() {
+        let mut compiler = CompilerData {
+            id: "clang".into(), language: "cpp".into(), version: "23".into(),
+            cmd: vec![], linker_id: String::new(), full_version: String::new(),
+            defines: HashMap::new(), cpp_stdlib: Some("stdc++".into()),
+        };
+        assert_eq!(assertion_arg("c", false, Some(&compiler)), None);
+        assert_eq!(assertion_arg("cpp", false, Some(&compiler)), Some("-D_GLIBCXX_ASSERTIONS=1"));
+        compiler.cpp_stdlib = Some("c++".into());
+        assert_eq!(assertion_arg("cpp", false, Some(&compiler)), Some("-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST"));
+        for name in ["_GLIBCXX_ASSERTIONS", "_LIBCPP_HARDENING_MODE", "_LIBCPP_ENABLE_ASSERTIONS"] {
+            compiler.defines.insert(name.into(), String::new());
+            assert_eq!(assertion_arg("cpp", false, Some(&compiler)), None);
+            assert_eq!(assertion_arg("cpp", true, Some(&compiler)), Some("-DNDEBUG"));
+            compiler.defines.remove(name);
+        }
+        assert_eq!(assertion_arg("c", true, Some(&compiler)), Some("-DNDEBUG"));
+    }
 }

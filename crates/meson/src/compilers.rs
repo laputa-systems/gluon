@@ -63,16 +63,30 @@ pub fn detect_compiler(vm: &mut VM, language: &str) -> bool {
             guessed_id
         };
         if let Some(version) = get_compiler_version(cmd, compiler_id) {
-            let compiler = CompilerData {
+            let mut compiler = CompilerData {
                 id: compiler_id.to_string(),
                 language: language.to_string(),
                 version: version.clone(),
                 cmd: cmd_words.clone(),
                 linker_id: detect_linker(cmd, compiler_id),
                 full_version: version,
+                defines: Default::default(),
+                cpp_stdlib: None,
             };
+            if matches!(language, "cpp" | "c++") && matches!(compiler_id, "gcc" | "clang") {
+                let Some(defines) = compiler_defines(&compiler) else {
+                    continue;
+                };
+                compiler.defines = defines;
+                let header = if check_header(&compiler, "version") { "version" } else { "ciso646" };
+                compiler.cpp_stdlib = Some(if check_header_symbol(&compiler, header, "_LIBCPP_VERSION", &[]) {
+                    "c++".to_string()
+                } else {
+                    "stdc++".to_string()
+                });
+            }
             let key = format!("compiler_{}", language);
-            vm.globals.insert(key, Object::Compiler(compiler));
+            vm.globals.insert(key, Object::Compiler(compiler.clone()));
             vm.build_data
                 .compiler_ids
                 .insert(language.to_string(), compiler_id.to_string());
@@ -83,10 +97,23 @@ pub fn detect_compiler(vm: &mut VM, language: &str) -> bool {
             vm.build_data
                 .compiler_ids
                 .insert(canonical.to_string(), compiler_id.to_string());
+            vm.build_data.compilers.insert(canonical.to_string(), compiler);
             return true;
         }
     }
     false
+}
+
+fn compiler_defines(compiler: &CompilerData) -> Option<std::collections::HashMap<String, String>> {
+    let mut args = if compiler.id == "gcc" { vec!["-cpp", "-x", "c++"] } else { vec!["-x", "c++"] };
+    args.extend(["-E", "-dM", "-"]);
+    let run = |args: &[&str]| compiler_command(compiler).args(args).stdin(std::process::Stdio::null()).output().ok().filter(|output| output.status.success());
+    let output = run(&args).or_else(|| run(&["-E", "-dM", "-"]))?;
+    Some(String::from_utf8_lossy(&output.stdout).lines().filter_map(|line| {
+        let rest = line.strip_prefix("#define ")?;
+        let (name, value) = rest.split_once(' ').unwrap_or((rest, ""));
+        Some((name.to_string(), value.to_string()))
+    }).collect())
 }
 
 fn compiler_env_var(language: &str) -> Option<&'static str> {
@@ -974,6 +1001,8 @@ mod probe_tests {
             cmd: vec!["cc".into()],
             linker_id: String::new(),
             full_version: String::new(),
+            defines: Default::default(),
+            cpp_stdlib: None,
         }
     }
 

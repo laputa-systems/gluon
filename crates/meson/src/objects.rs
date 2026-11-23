@@ -287,6 +287,8 @@ pub struct CompilerData {
     pub cmd: Vec<String>,
     pub linker_id: String,
     pub full_version: String,
+    pub defines: HashMap<String, String>,
+    pub cpp_stdlib: Option<String>,
 }
 
 #[derive(Debug, Clone)]
