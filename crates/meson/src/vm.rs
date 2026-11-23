@@ -177,6 +177,7 @@ pub struct BuildData {
     pub c_std: String,
     pub cpp_std: String,
     pub compiler_ids: HashMap<String, String>,
+    pub compilers: HashMap<String, crate::objects::CompilerData>,
     pub project_args: HashMap<String, HashMap<String, Vec<String>>>,
     pub project_link_args: HashMap<String, HashMap<String, Vec<String>>>,
     pub global_args: HashMap<String, Vec<String>>,
