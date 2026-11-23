@@ -42,6 +42,20 @@
     clippy::enum_variant_names
 )]
 
+#[path = "../../graph/src/lib.rs"]
+mod graph;
+#[path = "../../ninja/src/manifest.rs"]
+mod manifest;
+#[cfg(test)]
+#[path = "../../ninja/src/build/expand.rs"]
+mod ninja_expand;
+#[path = "../../ninja/src/tools/compdb_data.rs"]
+mod ninja_compdb;
+#[cfg(test)]
+mod build {
+    pub use crate::ninja_expand::expand_in_edge as expand_in_edge_pub;
+}
+
 pub const VERSION: &str = "1.12.1";
 
 #[macro_use]

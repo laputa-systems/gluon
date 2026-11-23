@@ -163,3 +163,13 @@ Next: 42
 - **Acceptance:** Document a reproducible command and a bounded three-way report with tool provenance, per-case outcomes and explicit unsupported/incomplete reasons on Linux/musl and macOS. Positive reference-stage failures or missing tools in a requested run cannot count as clean coverage, and zero completed comparisons cannot pass. A known Muon difference exercises classification, and an injected changed output proves that comparisons detect a mismatch. Minimize actual disagreements into independently authored regressions with a recorded disposition; a bounded clean result is valid and finding a new defect is not required.
 - **Fix with:** reference-parity
 - **Effort:** M
+
+### GLU-42 · P3 · compiler commands omit the target private include directory
+
+- **Area:** meson · backend
+- **Where:** crates/meson/src/backend.rs compile-edge arguments
+- **Problem:** For `project('p', 'c')` and `executable('app', 'main.c')`, reference Meson 1.12.1 includes `-Iapp.p` in the C compile command; gluon omits it. Generated headers in the target private directory are therefore not found through the implicit include path.
+- **Reproducer:** Configure that project with each implementation. The reference command begins `cc -Iapp.p -I. -I../src ... -c ../src/main.c`; gluon begins `cc -I<source> -I<build> ... -c <source>/main.c`.
+- **Recommendation:** Add the target private directory to compile-edge include arguments and compare the generated command with the pinned Meson reference.
+- **Fix with:** reference-parity
+- **Effort:** S
