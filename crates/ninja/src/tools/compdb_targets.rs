@@ -7,7 +7,6 @@
 //! depth-first dependency order from the named targets.
 
 use crate::graph::State;
-use crate::manifest::expand;
 use std::collections::HashSet;
 
 const USAGE: &str = "usage: ninja -t compdb [-hx] target [targets]\n\nopti\
@@ -55,32 +54,7 @@ pub(super) fn run(state: &State, args: &[String]) -> Result<u8, String> {
         collect(state, t, &mut edges_to_emit, &mut seen);
     }
 
-    let mut out = String::from("[\n");
-    for (i, &edge_idx) in edges_to_emit.iter().enumerate() {
-        let edge = &state.edges[edge_idx];
-        let rule = state.rules.get(&edge.rule);
-        let command = rule
-            .and_then(|r| r.bindings.get("command"))
-            .map(|c| expand_in_edge(state, edge, c))
-            .unwrap_or_default();
-        let file = edge.inputs.first().cloned().unwrap_or_default();
-        let output = edge.outputs.first().cloned().unwrap_or_default();
-        out.push_str("  {\n");
-        out.push_str(&format!("    \"directory\": \"{}\",\n", json_escape(&dir)));
-        out.push_str(&format!(
-            "    \"command\": \"{}\",\n",
-            json_escape(&command)
-        ));
-        out.push_str(&format!("    \"file\": \"{}\",\n", json_escape(&file)));
-        out.push_str(&format!("    \"output\": \"{}\"\n", json_escape(&output)));
-        out.push_str("  }");
-        if i + 1 < edges_to_emit.len() {
-            out.push(',');
-        }
-        out.push('\n');
-    }
-    out.push_str("]\n");
-    print!("{out}");
+    print!("{}", super::compdb_data::render(state, &dir, edges_to_emit.iter().copied(), args.iter().any(|arg| arg == "-x")));
     Ok(0)
 }
 
@@ -107,46 +81,4 @@ fn collect(state: &State, target: &str, out: &mut Vec<usize>, seen: &mut HashSet
     if seen.insert(idx) {
         out.push(idx);
     }
-}
-
-fn json_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out
-}
-
-/// Edge-context expansion identical to the build runner's, duplicated
-/// here to keep tools/ self-contained without pulling in `build::`.
-fn expand_in_edge(state: &State, edge: &crate::graph::Edge, value: &str) -> String {
-    let rule = state.rules.get(&edge.rule);
-    let in_str = edge.inputs.join(" ");
-    // `$in_newline` is the newline-separated form of `$in` (standard Ninja).
-    let in_newline_str = edge.inputs.join("\n");
-    let out_str = edge.outputs.join(" ");
-    expand(value, &|name| match name {
-        "in" => Some(in_str.clone()),
-        "in_newline" => Some(in_newline_str.clone()),
-        "out" => Some(out_str.clone()),
-        _ => {
-            if let Some(v) = edge.bindings.get(name) {
-                return Some(v.clone());
-            }
-            if let Some(r) = rule
-                && let Some(v) = r.bindings.get(name)
-            {
-                return Some(expand(v, &|n2| state.bindings.get(n2).cloned()));
-            }
-            state.bindings.get(name).cloned()
-        }
-    })
 }

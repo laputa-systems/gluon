@@ -85,7 +85,7 @@ pub fn parse(argv: &[String]) -> Result<Options, String> {
                 i += 1;
                 while i < argv.len() {
                     let arg = &argv[i];
-                    if arg == cli_short_h!() || arg == cli_long_help!() { o.show_help = true; }
+                    if (arg == cli_short_h!() && o.tool.as_deref() != Some(cli_command_compdb!())) || arg == cli_long_help!() { o.show_help = true; }
                     o.tool_args.push(arg.clone());
                     if o.tool.as_deref() == Some(cli_command_multi_inputs!()) && arg == cli_short_d!() && i + 1 < argv.len() {
                         i += 1;
