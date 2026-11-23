@@ -386,15 +386,14 @@ impl NinjaBackend {
             let file_lang = self.detect_file_language(obj_src, &lang);
             let file_compile_rule = format!("{}_COMPILER", file_lang);
 
-            let mut args = Vec::new();
+            let mut args = vec![format!("-I{}/{}{}.p", self.build_root, target_dir, target.output_name)];
             if target.implicit_include_directories {
-                args.push(format!("-I{}", self.source_root));
-                if !target.subdir.is_empty() {
-                    args.push(format!("-I{}/{}", self.source_root, target.subdir));
-                }
-                args.push(format!("-I{}", self.build_root));
-                if !target.subdir.is_empty() {
+                if target.subdir.is_empty() {
+                    args.push(format!("-I{}", self.build_root));
+                    args.push(format!("-I{}", self.source_root));
+                } else {
                     args.push(format!("-I{}/{}", self.build_root, target.subdir));
+                    args.push(format!("-I{}/{}", self.source_root, target.subdir));
                 }
             }
             for inc in &target.include_dirs {
