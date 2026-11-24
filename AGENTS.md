@@ -4,8 +4,8 @@ gluon is a Rust workspace implementing Meson- and Ninja-compatible build
 tools (`meson`, `ninja`, `gluon-build` in `bins/`). Library crates live in
 `crates/`; differential tests in `tests/`. Details:
 [docs/architecture.md](docs/architecture.md),
-[docs/decisions.md](docs/decisions.md), [docs/testing.md](docs/testing.md),
-[docs/status.md](docs/status.md).
+[docs/decisions.md](docs/decisions.md), [docs/testing.md](docs/testing.md).
+The active plan and its handoff are in [docs/roadmap.md](docs/roadmap.md#status).
 Open defects: [TODO.md](TODO.md).
 
 Build: `cargo build --profile dist --locked`
