@@ -23,7 +23,7 @@ printf '%s  %s\n' "$(pin MESON_WHEEL_SHA256)" "$wheel" "$(pin NINJA_MAC_SHA256)"
   shasum -a 256 -c
 unzip -q ninja-mac.zip ninja -d bin
 python3 -m zipfile -e "$wheel" meson-wheel
-printf '#!/bin/sh\nPYTHONPATH=%s exec python3 -m mesonbuild.mesonmain "$@"\n' "$scratch/meson-wheel" > bin/meson
+printf '#!/usr/bin/env python3\nimport sys\nsys.path.insert(0, %s)\nfrom mesonbuild.mesonmain import main\nsys.exit(main())\n' "'$scratch/meson-wheel'" > bin/meson
 chmod +x bin/meson
 PATH="$scratch/bin:$PATH" bash "$root/tests/differential/run.sh"
 awk '/^SKIP / && $2 !~ /^meson\/wayland-(find-protocol|scan-xml)$/ { print; skipped = 1 }
