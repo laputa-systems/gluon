@@ -99,7 +99,7 @@ pub fn generate(
             },
             build_rpaths: rpath_dirs_to_remove(target),
         });
-        for (alias, alias_target) in target.install_aliases() {
+        for (alias, alias_target) in target.version_aliases() {
             plan.symlinks.push(InstallSymlink {
                 target: alias_target,
                 destination: options::join_install_path(&dir, &alias),

@@ -224,6 +224,15 @@ run_compare_meson() {
     esac
     i=$((i+1))
   done
+  if [ -f "$src/compare-symlinks" ]; then
+    (cd "$ref_build" && find . -type l | LC_ALL=C sort | while IFS= read -r link; do printf '%s -> %s\n' "$link" "$(readlink "$link")"; done >"$work/ref_links.txt")
+    (cd "$cand_build" && find . -type l | LC_ALL=C sort | while IFS= read -r link; do printf '%s -> %s\n' "$link" "$(readlink "$link")"; done >"$work/cand_links.txt")
+    if ! diff -q "$work/ref_links.txt" "$work/cand_links.txt" >/dev/null 2>&1; then
+      printf 'FAIL %s build symlink mismatch\n' "$id" >>"$TMPBASE/results.log"
+      diff "$work/ref_links.txt" "$work/cand_links.txt" >>"$TMPBASE/results.log" || true
+      return 1
+    fi
+  fi
   require_idle_ninja "$id" "$ref_build" "$cand_build" "$work" || return 1
   if [ -f "$src/compare-install" ]; then
     ref_dest="$work/dest"

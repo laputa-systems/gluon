@@ -107,6 +107,8 @@ impl NinjaBackend {
             self.write_install_target(&mut out, build_data)?;
         }
 
+        self.write_implicit_outputs(&mut out, build_data)?;
+
         // Default targets
         self.write_defaults(&mut out, build_data)?;
 
@@ -935,6 +937,47 @@ impl NinjaBackend {
         writeln!(out, "  pool = console").unwrap();
         writeln!(out).unwrap();
         Ok(())
+    }
+
+    fn write_implicit_outputs(&self, out: &mut String, build_data: &BuildData) -> Result<(), String> {
+        let mut outs = Vec::new();
+        for target in &build_data.targets {
+            let dir = if target.subdir.is_empty() {
+                String::new()
+            } else {
+                format!("{}/", target.subdir)
+            };
+            for (alias, _) in target.version_aliases() {
+                outs.push(format!("{}{}", dir, alias));
+            }
+        }
+        if !outs.is_empty() {
+            writeln!(out, "build meson-implicit-outs: phony {}", outs.join(" ")).unwrap();
+            writeln!(out).unwrap();
+        }
+        Ok(())
+    }
+
+    /// Create the versioned-library symlinks Meson makes in the build
+    /// directory at setup time (e.g. libfoo.so.0 -> libfoo.so.0.9.2).
+    /// Like Meson, platforms without symlink support are skipped silently.
+    pub fn create_version_aliases(&self, build_data: &BuildData) {
+        for target in &build_data.targets {
+            let aliases = target.version_aliases();
+            if aliases.is_empty() {
+                continue;
+            }
+            let dir = Path::new(&self.build_root).join(&target.subdir);
+            for (alias, to) in aliases {
+                let link = dir.join(&alias);
+                let _ = std::fs::create_dir_all(&dir);
+                let _ = std::fs::remove_file(&link);
+                #[cfg(unix)]
+                let _ = std::os::unix::fs::symlink(&to, &link);
+                #[cfg(windows)]
+                let _ = std::os::windows::fs::symlink_file(&to, &link);
+            }
+        }
     }
 
     fn write_defaults(&self, out: &mut String, build_data: &BuildData) -> Result<(), String> {
