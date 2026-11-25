@@ -122,3 +122,34 @@ fn captured_command_input_regenerates_before_default_target() {
     }
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn plainname_and_basename_substitute_in_output() {
+    let (output, dir) = setup("configure_file(input: 'input.in', output: '@PLAINNAME@.conf', configuration: {'VALUE': 'hello'})\nconfigure_file(input: 'input.in', output: '@BASENAME@.copy', copy: true)");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(std::fs::read(dir.join("build/input.in.conf")).unwrap(), b"value=hello\n");
+    assert_eq!(std::fs::read(dir.join("build/input.copy")).unwrap(), b"value=@VALUE@\n");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn plainname_with_multiple_inputs_fails_setup() {
+    reject("configure_file(input: ['data.in', 'input.in'], output: '@PLAINNAME@.out', copy: true)", &["more than one input"]);
+    reject("configure_file(input: ['data.in', 'input.in'], output: '@BASENAME@.out', configuration: configuration_data())", &["more than one input"]);
+}
+
+#[test]
+fn plainname_without_input_stays_literal() {
+    let (output, dir) = setup("configure_file(output: '@PLAINNAME@.out', configuration: configuration_data())");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(dir.join("build/@PLAINNAME@.out").is_file());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn command_templates_use_input_file_names() {
+    let (output, dir) = setup("configure_file(input: 'input.in', output: 'out', command: ['sh', '-c', 'printf \"%s %s\" \"$1\" \"$2\"', 'sh', '@BASENAME@', '@PLAINNAME@'], capture: true)");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(std::fs::read(dir.join("build/out")).unwrap(), b"input input.in");
+    std::fs::remove_dir_all(dir).unwrap();
+}
