@@ -2452,6 +2452,48 @@ fn builtin_configure_file(vm: &mut VM, args: &[CallArg]) -> Result<Object, Strin
     let depfile = VM::get_arg_str(args, "depfile", usize::MAX).map(String::from);
     let copy = VM::get_arg_bool(args, "copy", false);
 
+    let input_paths: Vec<String> = {
+        let value = VM::get_arg_value(args, "input");
+        let items: Vec<&Object> = match value {
+            Some(Object::Array(arr)) => arr.iter().collect(),
+            Some(item) => vec![item],
+            None => Vec::new(),
+        };
+        items
+            .into_iter()
+            .filter_map(|item| match item {
+                Object::String(s) => Some(if vm.current_subdir.is_empty() {
+                    format!("{}/{}", vm.source_root, s)
+                } else {
+                    format!("{}/{}/{}", vm.source_root, vm.current_subdir, s)
+                }),
+                Object::File(f) => Some(if f.is_built {
+                    if f.subdir.is_empty() {
+                        format!("{}/{}", vm.build_root, f.path)
+                    } else {
+                        format!("{}/{}/{}", vm.build_root, f.subdir, f.path)
+                    }
+                } else if f.subdir.is_empty() {
+                    format!("{}/{}", vm.source_root, f.path)
+                } else {
+                    format!("{}/{}/{}", vm.source_root, f.subdir, f.path)
+                }),
+                _ => None,
+            })
+            .collect()
+    };
+    let output = if input_paths.is_empty() {
+        output
+    } else {
+        substitute_filename_templates(&output, &input_paths)?
+    };
+    let depfile = match depfile {
+        Some(depfile) if !input_paths.is_empty() => {
+            Some(substitute_filename_templates(&depfile, &input_paths)?)
+        }
+        depfile => depfile,
+    };
+
     let mut command = Vec::new();
     if let Some(Object::Array(arr)) = VM::get_arg_value(args, "command") {
         for item in arr {
@@ -2630,10 +2672,13 @@ fn builtin_configure_file(vm: &mut VM, args: &[CallArg]) -> Result<Object, Strin
             }
             s = s.replace("@OUTPUT@", &output_path);
             if let Some(ref inp) = input {
-                let basename = inp.rsplit('/').next().unwrap_or(inp);
+                let name = inp.rsplit('/').next().unwrap_or(inp);
+                let basename = Path::new(name)
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or(name);
                 s = s.replace("@BASENAME@", basename);
-                let plainname = basename.rsplit('.').next_back().unwrap_or(basename);
-                s = s.replace("@PLAINNAME@", plainname);
+                s = s.replace("@PLAINNAME@", name);
             }
             if let Some(ref dep) = depfile {
                 s = s.replace("@DEPFILE@", &format!("{}/{}", build_subdir, dep));
@@ -2698,6 +2743,140 @@ fn builtin_configure_file(vm: &mut VM, args: &[CallArg]) -> Result<Object, Strin
         subdir: vm.current_subdir.clone(),
         is_built: true,
     }))
+}
+
+fn template_token_name(template: &str, start: usize) -> Option<(usize, &str)> {
+    let tail = &template[start + 1..];
+    let end = tail.find('@')?;
+    let name = &tail[..end];
+    if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return None;
+    }
+    Some((end + 2, name))
+}
+
+fn template_tokens(template: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut offset = 0;
+    while let Some(found) = template[offset..].find('@') {
+        let start = offset + found;
+        if let Some((len, name)) = template_token_name(template, start) {
+            tokens.push(format!("@{name}@"));
+            offset = start + len;
+        } else {
+            offset = start + 1;
+        }
+    }
+    tokens
+}
+
+fn numbered_template_index(token: &str, prefix: &str) -> Option<Option<usize>> {
+    let name = token.strip_prefix('@')?.strip_suffix('@')?;
+    let rest = name.strip_prefix(prefix)?;
+    if rest.is_empty() {
+        return Some(None);
+    }
+    if rest.bytes().all(|b| b.is_ascii_digit()) {
+        return rest.parse::<usize>().ok().map(Some);
+    }
+    None
+}
+
+fn substitute_filename_templates(template: &str, inputs: &[String]) -> Result<String, String> {
+    if inputs.is_empty() {
+        return Ok(template.to_string());
+    }
+    let tokens = template_tokens(template);
+    if inputs.len() > 1 {
+        for wanted in ["@PLAINNAME@", "@BASENAME@"] {
+            if tokens.iter().any(|token| token == wanted) {
+                return Err(format!(
+                    "Command cannot have '{wanted}' when there is more than one input file"
+                ));
+            }
+        }
+    }
+    for token in &tokens {
+        if let Some(Some(index)) = numbered_template_index(token, "INPUT") {
+            if index >= inputs.len() {
+                return Err(format!(
+                    "Command cannot have '{token}' since there are only {} inputs",
+                    inputs.len()
+                ));
+            }
+        }
+    }
+    let output_token = tokens
+        .iter()
+        .find(|token| {
+            numbered_template_index(token, "OUTPUT").is_some()
+        })
+        .or_else(|| tokens.iter().find(|token| token.as_str() == "@OUTDIR@"));
+    if let Some(token) = output_token {
+        return Err(format!(
+            "Command cannot have '{token}' since there are no outputs"
+        ));
+    }
+    if inputs.len() > 1 && tokens.iter().any(|token| token == "@INPUT@") {
+        return Err(
+            "Command has '@INPUT@' as part of a string and more than one input file".to_string(),
+        );
+    }
+
+    let mut result = String::with_capacity(template.len());
+    let mut offset = 0;
+    while offset < template.len() {
+        let Some(found) = template[offset..].find('@') else {
+            result.push_str(&template[offset..]);
+            break;
+        };
+        let start = offset + found;
+        result.push_str(&template[offset..start]);
+        let Some((len, name)) = template_token_name(template, start) else {
+            result.push('@');
+            offset = start + 1;
+            continue;
+        };
+        let token = format!("@{name}@");
+        let value = if name == "INPUT" {
+            Some(inputs[0].clone())
+        } else if let Some(Some(index)) = numbered_template_index(&token, "INPUT") {
+            inputs.get(index).cloned()
+        } else if name == "PLAINNAME" {
+            Some(file_name_of(&inputs[0]))
+        } else if name == "BASENAME" {
+            Some(file_stem_of(&inputs[0]))
+        } else if let Some(Some(index)) = numbered_template_index(&token, "PLAINNAME") {
+            inputs.get(index).map(|input| file_name_of(input))
+        } else if let Some(Some(index)) = numbered_template_index(&token, "BASENAME") {
+            inputs.get(index).map(|input| file_stem_of(input))
+        } else {
+            None
+        };
+        match value {
+            Some(value) => result.push_str(&value),
+            None => result.push_str(&template[start..start + len]),
+        }
+        offset = start + len;
+    }
+    Ok(result)
+}
+
+fn file_name_of(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(path)
+        .to_string()
+}
+
+fn file_stem_of(path: &str) -> String {
+    let name = file_name_of(path);
+    Path::new(&name)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(&name)
+        .to_string()
 }
 
 fn builtin_vcs_tag(vm: &mut VM, args: &[CallArg]) -> Result<Object, String> {
