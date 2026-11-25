@@ -286,9 +286,11 @@ impl BuildTarget {
         }
     }
 
-    /// Install symlinks Meson creates for a versioned shared library.
-    /// Each entry is (alias name, relative target name).
-    pub fn install_aliases(&self) -> Vec<(String, String)> {
+    /// Versioned-library symlinks Meson creates, as (alias name, relative
+    /// target name) pairs: libfoo.so.0 -> libfoo.so.0.9.2 and
+    /// libfoo.so -> libfoo.so.0 on ELF, libfoo.dylib -> libfoo.0.dylib on
+    /// macOS. Used for both the build directory and `meson install`.
+    pub fn version_aliases(&self) -> Vec<(String, String)> {
         let mut aliases = Vec::new();
         let Some(soversion) = &self.soversion else {
             return aliases;

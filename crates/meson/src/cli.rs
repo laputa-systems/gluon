@@ -968,6 +968,7 @@ impl Cli {
             eprintln!("Cannot write {}: {}", ninja_path, e);
             return 1;
         }
+        backend.create_version_aliases(&interp.vm.build_data);
 
         let state = match ninja::manifest::parse_file(&ninja_path) {
             Ok(state) => state,
