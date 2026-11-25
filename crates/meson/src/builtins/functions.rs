@@ -3626,50 +3626,7 @@ fn builtin_run_command(vm: &mut VM, args: &[CallArg]) -> Result<Object, String> 
 
     let mut cmd_parts = Vec::new();
     for arg in &positional {
-        match arg {
-            Object::String(s) => cmd_parts.push(s.clone()),
-            Object::ExternalProgram(p) => cmd_parts.push(p.path.clone()),
-            Object::File(f) => {
-                let path = if f.is_built {
-                    if f.subdir.is_empty() {
-                        format!("{}/{}", vm.build_root, f.path)
-                    } else {
-                        format!("{}/{}/{}", vm.build_root, f.subdir, f.path)
-                    }
-                } else {
-                    if f.subdir.is_empty() {
-                        format!("{}/{}", vm.source_root, f.path)
-                    } else {
-                        format!("{}/{}/{}", vm.source_root, f.subdir, f.path)
-                    }
-                };
-                cmd_parts.push(path);
-            }
-            Object::Array(arr) => {
-                for item in arr {
-                    match item {
-                        Object::String(s) => cmd_parts.push(s.clone()),
-                        Object::ExternalProgram(p) => cmd_parts.push(p.path.clone()),
-                        Object::File(f) => {
-                            let path = if f.is_built {
-                                if f.subdir.is_empty() {
-                                    format!("{}/{}", vm.build_root, f.path)
-                                } else {
-                                    format!("{}/{}/{}", vm.build_root, f.subdir, f.path)
-                                }
-                            } else if f.subdir.is_empty() {
-                                format!("{}/{}", vm.source_root, f.path)
-                            } else {
-                                format!("{}/{}/{}", vm.source_root, f.subdir, f.path)
-                            };
-                            cmd_parts.push(path);
-                        }
-                        other => cmd_parts.push(other.to_string_value()),
-                    }
-                }
-            }
-            _ => cmd_parts.push(arg.to_string_value()),
-        }
+        run_command_push_arg(vm, arg, &mut cmd_parts);
     }
 
     if cmd_parts.is_empty() {
@@ -3742,6 +3699,20 @@ fn builtin_run_command(vm: &mut VM, args: &[CallArg]) -> Result<Object, String> 
                 stderr: e.to_string(),
             }))
         }
+    }
+}
+
+fn run_command_push_arg(vm: &VM, arg: &Object, cmd_parts: &mut Vec<String>) {
+    match arg {
+        Object::String(s) => cmd_parts.push(s.clone()),
+        Object::ExternalProgram(p) => cmd_parts.push(p.path.clone()),
+        Object::File(f) => cmd_parts.push(resolved_file_path(vm, f)),
+        Object::Array(arr) => {
+            for item in arr {
+                run_command_push_arg(vm, item, cmd_parts);
+            }
+        }
+        other => cmd_parts.push(other.to_string_value()),
     }
 }
 
