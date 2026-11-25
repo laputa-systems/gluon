@@ -238,10 +238,15 @@ pub fn generate(
         };
         let directory = source_file_path(source_root, &subdir.subdir, source);
         let base = subdir.install_dir.clone();
-        let destination = if subdir.strip_directory {
+        let leaf = directory
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or("");
+        let destination = if subdir.strip_directory || leaf == "." {
             base
         } else {
-            options::join_install_path(&base, Path::new(&directory).file_name().map(|n| n.to_string_lossy().to_string()).as_deref().unwrap_or(""))
+            options::join_install_path(&base, leaf)
         };
         plan.subdirs.push(InstallSubdir {
             source: directory,
